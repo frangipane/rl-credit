@@ -7,7 +7,7 @@ import tensorboardX
 import sys
 
 import script_utils as utils
-from model import ACModel
+from model import ACModel, ACModelVanilla
 
 
 # Parse arguments
@@ -118,7 +118,10 @@ txt_logger.info("Observations preprocessor loaded")
 
 # Load model
 
-acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
+if args.algo == "hca_returns":
+    acmodel = ACModelVanilla(obs_space, envs[0].action_space)
+else:
+    acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
 if "model_state" in status:
     acmodel.load_state_dict(status["model_state"])
 acmodel.to(device)
@@ -135,6 +138,10 @@ elif args.algo == "ppo":
     algo = rl_credit.PPOAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                             args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                             args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
+elif args.algo == "hca_returns":
+    algo = rl_credit.HCAReturns(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
+                            args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
+                            args.optim_alpha, args.optim_eps, preprocess_obss)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
