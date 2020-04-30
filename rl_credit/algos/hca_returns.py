@@ -29,11 +29,11 @@ class HCAReturns(BaseAlgo):
         update_value = 0
         update_policy_loss = 0
         update_value_loss = 0
+        update_hca_loss = 0
         update_loss = 0
 
         # Compute loss
-
-        dist, value = self.acmodel(exps.obs)
+        dist, value, hca_logits = self.acmodel(exps.obs, exps.returnn)
 
         entropy = dist.entropy().mean()
 
@@ -41,7 +41,12 @@ class HCAReturns(BaseAlgo):
 
         value_loss = (value - exps.returnn).pow(2).mean()
 
-        loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss
+        # Cross-entropy loss against action taken, cross_entropy expects
+        # target to be of dtype long
+        hca_loss = F.cross_entropy(hca_logits, exps.action.long())
+
+        loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss \
+               + self.value_loss_coef * hca_loss  # TODO: use a separate hca_loss_coef
 
         # Update batch values
 
@@ -49,6 +54,7 @@ class HCAReturns(BaseAlgo):
         update_value += value.mean().item()
         update_policy_loss += policy_loss.item()
         update_value_loss += value_loss.item()
+        update_hca_loss += hca_loss.item()
         update_loss += loss
 
         # Update actor-critic
