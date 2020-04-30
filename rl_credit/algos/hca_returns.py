@@ -35,15 +35,24 @@ class HCAReturns(BaseAlgo):
         # Compute loss
         dist, value, hca_logits = self.acmodel(exps.obs, exps.returnn)
 
+        # Pick the HCA probability indexed by the selected action
+        with torch.no_grad():
+            hca_prob = torch.gather(F.softmax(hca_logits, dim=1),
+                                    dim=1,
+                                    index=exps.action.view(-1,1).long()).squeeze()
+            hca_factor = (1 - torch.exp(exps.log_prob) / hca_prob ) * exps.returnn
+
         entropy = dist.entropy().mean()
 
-        policy_loss = -(dist.log_prob(exps.action) * exps.advantage).mean()
+        # policy loss using hca factor
+        policy_loss = -(dist.log_prob(exps.action) * hca_factor).mean()
+        #policy_loss = -(dist.log_prob(exps.action) * exps.advantage).mean()
 
         value_loss = (value - exps.returnn).pow(2).mean()
 
         # Cross-entropy loss against action taken, cross_entropy expects
         # target to be of dtype long
-        hca_loss = F.cross_entropy(hca_logits, exps.action.long())
+        hca_loss = F.cross_entropy(hca_logits, exps.action.long(), reduction='mean')
 
         loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss \
                + self.value_loss_coef * hca_loss  # TODO: use a separate hca_loss_coef
