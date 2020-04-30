@@ -186,3 +186,65 @@ class ACModelVanilla(nn.Module, BaseModel):
         value = x.squeeze(1)
 
         return dist, value
+
+
+class ACModelReturnHCA(nn.Module, BaseModel):
+    def __init__(self, obs_space, action_space):
+        super().__init__()
+
+        # Define image embedding
+        self.image_conv = nn.Sequential(
+            nn.Conv2d(3, 16, (2, 2)),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),
+            nn.Conv2d(16, 32, (2, 2)),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, (2, 2)),
+            nn.ReLU()
+        )
+        n = obs_space["image"][0]
+        m = obs_space["image"][1]
+        self.image_embedding_size = ((n-1)//2-2)*((m-1)//2-2)*64
+
+        # Define actor's model
+        self.actor = nn.Sequential(
+            nn.Linear(self.image_embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, action_space.n)
+        )
+
+        # Define critic's model
+        self.critic = nn.Sequential(
+            nn.Linear(self.image_embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+
+        ## Define return-conditional HCA model
+        self.return_hca = nn.Sequential(
+            nn.Linear(self.image_embedding_size + 1, 64),  # +1 comes from scalar return Z
+            nn.Tanh(),
+            nn.Linear(64, action_space.n)
+        )
+
+        # Initialize parameters correctly
+        self.apply(init_params)
+
+    def forward(self, obs, z=None):
+        x = obs.image.transpose(1, 3).transpose(2, 3)
+        x = self.image_conv(x)
+        x = x.reshape(x.shape[0], -1)
+
+        embedding = x
+
+        x = self.actor(embedding)
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+
+        x = self.critic(embedding)
+        value = x.squeeze(1)
+
+        if z is not None:
+            hca_logits = self.return_hca(torch.cat((embedding, torch.unsqueeze(z,1)), 1))
+            return dist, value, hca_logits
+
+        return dist, value

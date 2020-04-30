@@ -7,7 +7,7 @@ import tensorboardX
 import sys
 
 import script_utils as utils
-from model import ACModel, ACModelVanilla
+from model import ACModel, ACModelVanilla, ACModelReturnHCA
 
 
 # Parse arguments
@@ -119,7 +119,7 @@ txt_logger.info("Observations preprocessor loaded")
 # Load model
 
 if args.algo == "hca_returns":
-    acmodel = ACModelVanilla(obs_space, envs[0].action_space)
+    acmodel = ACModelReturnHCA(obs_space, envs[0].action_space)
 else:
     acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
 if "model_state" in status:
