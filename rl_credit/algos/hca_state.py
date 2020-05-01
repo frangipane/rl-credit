@@ -6,7 +6,7 @@ from rl_credit.algos.base import BaseAlgo
 
 
 class HCAState(BaseAlgo):
-    """The Advantage Actor-Critic algorithm."""
+    """The state HCA Actor-Critic algorithm."""
 
     def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=1,
@@ -74,8 +74,8 @@ class HCAState(BaseAlgo):
             policy_loss, hca_loss = self._policy_loss_for_episode(exps[k:t+1])
             update_policy_loss += policy_loss
             update_hca_loss += hca_loss
-        # Compute mean policy loss over all rollouts
-        update_policy_loss /= len(start_indices)
+        # Compute mean policy loss over all rollouts.
+        update_policy_loss /= -1 * len(start_indices)
 
         dist, value = self.acmodel(exps.obs)
 
