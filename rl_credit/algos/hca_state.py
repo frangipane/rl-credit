@@ -40,7 +40,8 @@ class HCAState(BaseAlgo):
                 # vectorized version of the above                
                 _, _, hca_logits = self.acmodel(exps.obs[k], exps.obs[k+1:traj_len])
                 hca_prob = F.softmax(hca_logits, dim=1)
-                hca_factor = hca_prob * exps.reward[k+1:traj_len].unsqueeze(1)  # todo: include discount factor
+                discount_factor = torch.tensor([self.discount]).pow(torch.arange(k+1,traj_len-k))
+                hca_factor = discount_factor.unsqueeze(1) * hca_prob * exps.reward[k+1:traj_len].unsqueeze(1)
                 # hca_factor is size (traj_len - k + 1) x num_actions
 
                 #hca_factor += exps.reward[k]  # TODO: include an estimated immediate reward
