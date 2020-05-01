@@ -7,7 +7,7 @@ import tensorboardX
 import sys
 
 import script_utils as utils
-from model import ACModel, ACModelVanilla, ACModelReturnHCA
+from model import ACModel, ACModelVanilla, ACModelReturnHCA, ACModelStateHCA
 
 
 # Parse arguments
@@ -120,6 +120,8 @@ txt_logger.info("Observations preprocessor loaded")
 
 if args.algo == "hca_returns":
     acmodel = ACModelReturnHCA(obs_space, envs[0].action_space)
+elif args.algo == "hca_state":
+    acmodel = ACModelStateHCA(obs_space, envs[0].action_space)
 else:
     acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
 if "model_state" in status:
@@ -142,6 +144,10 @@ elif args.algo == "hca_returns":
     algo = rl_credit.HCAReturns(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                             args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                             args.optim_alpha, args.optim_eps, preprocess_obss)
+elif args.algo == "hca_state":
+    algo = rl_credit.HCAState(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
+                            args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
+                            args.optim_alpha, args.optim_eps, preprocess_obss)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
@@ -160,7 +166,7 @@ while num_frames < args.frames:
 
     update_start_time = time.time()
     exps, logs1 = algo.collect_experiences()
-    logs2 = algo.update_parameters(exps)
+    logs2 = algo.update_parameters(exps)  # update period is set by num_frames_per_proc
     logs = {**logs1, **logs2}
     update_end_time = time.time()
 

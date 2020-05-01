@@ -31,6 +31,8 @@ parser.add_argument("--text", action="store_true", default=False,
                     help="add a GRU to the model")
 parser.add_argument("--hcareturns", action="store_true", default=False,
                     help="use HCA returns model")
+parser.add_argument("--hcastate", action="store_true", default=False,
+                    help="use HCA state model")
 
 args = parser.parse_args()
 
@@ -54,7 +56,8 @@ print("Environment loaded\n")
 
 model_dir = utils.get_model_dir(args.model)
 agent = utils.Agent(env.observation_space, env.action_space, model_dir,
-                    device=device, argmax=args.argmax, use_memory=args.memory, use_text=args.text, hca_returns=args.hcareturns)
+                    device=device, argmax=args.argmax, use_memory=args.memory, use_text=args.text,
+                    hca_returns=args.hcareturns, hca_state=args.hcastate)
 print("Agent loaded\n")
 
 # Run the agent
