@@ -6,7 +6,7 @@ from rl_credit.algos.base import BaseAlgo
 
 
 class HCAState(BaseAlgo):
-    """The Advantage Actor-Critic algorithm."""
+    """The state HCA Actor-Critic algorithm."""
 
     def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=1,
@@ -29,9 +29,7 @@ class HCAState(BaseAlgo):
         hca_loss = 0
 
         while k < traj_len - 1:
-            with torch.no_grad():                
-                # TODO: traj_len -> traj_len - 1, replace last factor's reward with Value function estimate
-
+            with torch.no_grad():
                 # for t in range(k + 1, traj_len):
                 #     _, _, hca_logits = self.acmodel(exps.obs[k], exps.obs[t])
                 #     hca_prob = F.softmax(hca_logits, dim=1)
@@ -40,7 +38,13 @@ class HCAState(BaseAlgo):
                 # vectorized version of the above                
                 _, _, hca_logits = self.acmodel(exps.obs[k], exps.obs[k+1:traj_len])
                 hca_prob = F.softmax(hca_logits, dim=1)
-                hca_factor = hca_prob * exps.reward[k+1:traj_len].unsqueeze(1)  # todo: include discount factor
+                discount_factor = torch.tensor([self.discount]).pow(torch.arange(k+1,traj_len-k))
+
+                # Replace reward in last time step with its Value estimate
+                bootstrapped_rewards = torch.cat([exps.reward[k+1:traj_len-1],
+                                                  exps.value[-1].view(1)])
+                hca_factor = discount_factor.unsqueeze(1) * \
+                             hca_prob * bootstrapped_rewards.unsqueeze(1)
                 # hca_factor is size (traj_len - k + 1) x num_actions
 
                 #hca_factor += exps.reward[k]  # TODO: include an estimated immediate reward
@@ -74,8 +78,8 @@ class HCAState(BaseAlgo):
             policy_loss, hca_loss = self._policy_loss_for_episode(exps[k:t+1])
             update_policy_loss += policy_loss
             update_hca_loss += hca_loss
-        # Compute mean policy loss over all rollouts
-        update_policy_loss /= len(start_indices)
+        # Compute mean policy loss over all rollouts.
+        update_policy_loss /= -1 * len(start_indices)
 
         dist, value = self.acmodel(exps.obs)
 
