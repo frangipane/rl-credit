@@ -270,13 +270,9 @@ class ACModelStateHCA(ACModelVanilla):
                 # If obs contains a single image, and obs2 contains a batch of
                 # images, need to replicate embedding1 (by expanding its 0th dim to the shape
                 # of the num of images in obs2 to be able to concat.
-                embedding1 = embedding1.squeeze()
-                hca_logits = self.state_hca(
-                    torch.cat((embedding1.expand(embedding2.shape[0], embed_dim),
-                               embedding2), 1)
-                )
-            else:
-                hca_logits = self.state_hca(torch.cat((embedding1, embedding2), 1))
+                embedding1 = embedding1.squeeze().expand(embedding2.shape[0], embed_dim)
+
+            hca_logits = self.state_hca(torch.cat((embedding1, embedding2), 1))
             return dist, value, hca_logits
 
         return dist, value
