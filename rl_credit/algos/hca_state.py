@@ -36,24 +36,24 @@ class HCAState(BaseAlgo):
                 #     hca_factor = hca_prob * exps.reward[t]  # todo: include discount factor
 
                 # vectorized version of the above                
-                _, _, hca_logits = self.acmodel(exps.obs[k], exps.obs[k+1:traj_len])
+                pi_dist, _, hca_logits = self.acmodel(exps.obs[k], exps.obs[k+1:traj_len])
                 hca_prob = F.softmax(hca_logits, dim=1)
                 discount_factor = torch.tensor([self.discount]).pow(torch.arange(k+1,traj_len-k))
 
                 # Replace reward in last time step with its Value estimate
                 bootstrapped_rewards = torch.cat([exps.reward[k+1:traj_len-1],
                                                   exps.value[-1].view(1)])
-                hca_factor = discount_factor.unsqueeze(1) * \
-                             hca_prob * bootstrapped_rewards.unsqueeze(1)
+                hca_factor = discount_factor.unsqueeze(1) \
+                             * bootstrapped_rewards.unsqueeze(1) \
+                             * hca_prob / pi_dist.probs
                 # hca_factor is size (traj_len - k + 1) x num_actions
 
                 #hca_factor += exps.reward[k]  # TODO: include an estimated immediate reward
 
             # Compute policy loss
-            dist, _ = self.acmodel(exps.obs[k])
-            logprob_policy = torch.log(dist.probs)
+            pi_dist, _ = self.acmodel(exps.obs[k])
             # sum over all actions (dim=1) and all time step pairs (dim=0)
-            policy_loss += (logprob_policy * hca_factor).sum()
+            policy_loss += (pi_dist.probs * hca_factor).sum()
 
             # Compute state HCA cross entropy loss
             _, _, hca_logits = self.acmodel(exps.obs[k], exps.obs[k+1:traj_len])
@@ -78,7 +78,7 @@ class HCAState(BaseAlgo):
             policy_loss, hca_loss = self._policy_loss_for_episode(exps[k:t+1])
             update_policy_loss += policy_loss
             update_hca_loss += hca_loss
-        # Compute mean policy loss over all rollouts.
+        # Compute mean policy loss over all rollouts.  Change sign for update.
         update_policy_loss /= -1 * len(start_indices)
 
         dist, value = self.acmodel(exps.obs)
