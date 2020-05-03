@@ -24,9 +24,12 @@ class HCAState(BaseAlgo):
 
     def _policy_loss_for_episode(self, exps):
         traj_len = len(exps.reward)
+        n_actions = self.env.action_space.n
+
         k = 0  # pointer starts at beginning of episode
         policy_loss = 0
         hca_loss = 0
+        reward_loss = 0
 
         while k < traj_len - 1:
             with torch.no_grad():
@@ -35,8 +38,8 @@ class HCAState(BaseAlgo):
                 #     hca_prob = F.softmax(hca_logits, dim=1)
                 #     hca_factor = hca_prob * exps.reward[t]  # todo: include discount factor
 
-                # vectorized version of the above                
-                pi_dist, _, hca_logits = self.acmodel(exps.obs[k], exps.obs[k+1:traj_len])
+                # vectorized version of the above
+                pi_dist, _, hca_logits = self.acmodel(exps.obs[k], obs2=exps.obs[k+1:traj_len])
                 hca_prob = F.softmax(hca_logits, dim=1)
                 discount_factor = torch.tensor([self.discount]).pow(torch.arange(k+1,traj_len-k))
 
@@ -48,20 +51,30 @@ class HCAState(BaseAlgo):
                              * hca_prob / pi_dist.probs
                 # hca_factor is size (traj_len - k + 1) x num_actions
 
-                #hca_factor += exps.reward[k]  # TODO: include an estimated immediate reward
+                # estimated immediate reward for all actions
+                for a in range(n_actions):
+                    ohe_action = F.one_hot(torch.as_tensor(a), n_actions).float()
+                    _, _, est_reward = self.acmodel(exps.obs[k], action=ohe_action)
+                    hca_factor[:, a] += est_reward.item() * self.discount**k
 
-            # Compute policy loss
+            # Policy loss
+
             pi_dist, _ = self.acmodel(exps.obs[k])
             # sum over all actions (dim=1) and all time step pairs (dim=0)
             policy_loss += (pi_dist.probs * hca_factor).sum()
 
-            # Compute state HCA cross entropy loss
-            _, _, hca_logits = self.acmodel(exps.obs[k], exps.obs[k+1:traj_len])
+            # State HCA cross entropy loss
+            _, _, hca_logits = self.acmodel(exps.obs[k], obs2=exps.obs[k+1:traj_len])
             hca_loss += F.cross_entropy(hca_logits, exps.action[k+1:traj_len].long(), reduction='mean')
-            
+
             k += 1
- 
-            return policy_loss, hca_loss
+
+        # Estimated reward loss
+        ohe_action = F.one_hot(exps.action.long(), n_actions).float()
+        _, _, est_reward = self.acmodel(exps.obs, action=ohe_action)
+        reward_loss = F.mse_loss(est_reward.squeeze(), exps.reward, reduction='mean')
+
+        return policy_loss, hca_loss, reward_loss
 
     def update_parameters(self, exps):
         exps.mask = self.masks.transpose(0, 1).reshape(-1).unsqueeze(1)
@@ -69,15 +82,17 @@ class HCAState(BaseAlgo):
 
         update_policy_loss = 0
         update_hca_loss = 0
+        update_reward_loss = 0
 
         # Get starting indexes for initial obs in each rollout
         start_indices, end_indices = self._get_indices(exps.mask)
 
         # Compute policy loss per episode
         for k, t in zip(start_indices, end_indices):
-            policy_loss, hca_loss = self._policy_loss_for_episode(exps[k:t+1])
+            policy_loss, hca_loss, reward_loss = self._policy_loss_for_episode(exps[k:t+1])
             update_policy_loss += policy_loss
             update_hca_loss += hca_loss
+            update_reward_loss += reward_loss
         # Compute mean policy loss over all rollouts.  Change sign for update.
         update_policy_loss /= -1 * len(start_indices)
 
@@ -88,9 +103,11 @@ class HCAState(BaseAlgo):
 
         value_loss = (value - exps.returnn).pow(2).mean()
 
-        loss = update_policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss \
-               + self.value_loss_coef * update_hca_loss  # TODO: use a separate hca_loss_coef
-
+        # TODO: use a separate hca_loss_coef for hca and reward losses
+        loss = update_policy_loss - self.entropy_coef * entropy \
+               + self.value_loss_coef * value_loss \
+               + self.value_loss_coef * update_hca_loss \
+               + self.value_loss_coef * update_reward_loss
 
         # Update actor-critic
 
