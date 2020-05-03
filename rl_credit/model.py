@@ -233,10 +233,19 @@ class ACModelStateHCA(ACModelVanilla):
             nn.Linear(64, action_space.n)
         )
 
+        ## Define immediate reward estimated given action and obs
+        self.est_reward = nn.Sequential(
+            nn.Linear(self.image_embedding_size + action_space.n, 64), # action input is one hot encoded
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+
         # Initialize parameters correctly
         self.apply(init_params)
 
-    def forward(self, obs, obs2=None):
+    def forward(self, obs, obs2=None, action=None):
+        assert obs2 is None or action is None
+
         if obs.image.ndim == 3:
             # a singleton image.  Need to unsqueeze since expecting first dim
             # to correspond to batch size.
@@ -265,18 +274,21 @@ class ACModelStateHCA(ACModelVanilla):
 
             embedding2 = x2
 
-            embed_dim = embedding2.shape[1]
             if embedding1.shape[0] == 1 and embedding2.shape[0] > 1:
                 # If obs contains a single image, and obs2 contains a batch of
                 # images, need to replicate embedding1 (by expanding its 0th dim to the shape
                 # of the num of images in obs2 to be able to concat.
-                embedding1 = embedding1.squeeze()
-                hca_logits = self.state_hca(
-                    torch.cat((embedding1.expand(embedding2.shape[0], embed_dim),
-                               embedding2), 1)
-                )
-            else:
-                hca_logits = self.state_hca(torch.cat((embedding1, embedding2), 1))
+                embedding1 = (embedding1.squeeze()
+                              .expand(embedding2.shape[0], embedding2.shape[1]))
+
+            hca_logits = self.state_hca(torch.cat((embedding1, embedding2), 1))
             return dist, value, hca_logits
+
+        if action is not None:
+            if action.dim() == 1:
+                reward = self.est_reward(torch.cat((embedding1, action.unsqueeze(0)), 1))
+            else:
+                reward = self.est_reward(torch.cat((embedding1, action), 1))
+            return dist, value, reward
 
         return dist, value

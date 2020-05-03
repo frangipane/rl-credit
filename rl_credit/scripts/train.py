@@ -78,7 +78,7 @@ model_dir = utils.get_model_dir(model_name)
 
 txt_logger = utils.get_txt_logger(model_dir)
 csv_file, csv_logger = utils.get_csv_logger(model_dir)
-tb_writer = tensorboardX.SummaryWriter(model_dir)
+#tb_writer = tensorboardX.SummaryWriter(model_dir)
 
 # Log command and all script arguments
 
@@ -203,8 +203,8 @@ while num_frames < args.frames:
         csv_logger.writerow(data)
         csv_file.flush()
 
-        for field, value in zip(header, data):
-            tb_writer.add_scalar(field, value, num_frames)
+        # for field, value in zip(header, data):
+        #     tb_writer.add_scalar(field, value, num_frames)
 
     # Save status
 
