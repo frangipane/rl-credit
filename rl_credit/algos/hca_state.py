@@ -41,7 +41,7 @@ class HCAState(BaseAlgo):
                 # vectorized version of the above
                 pi_dist, _, hca_logits = self.acmodel(exps.obs[k], obs2=exps.obs[k+1:traj_len])
                 hca_prob = F.softmax(hca_logits, dim=1)
-                discount_factor = torch.tensor([self.discount]).pow(torch.arange(k+1,traj_len-k))
+                discount_factor = torch.tensor([self.discount]).pow(torch.arange(k+1,traj_len))
 
                 # Replace reward in last time step with its Value estimate
                 bootstrapped_rewards = torch.cat([exps.reward[k+1:traj_len-1],
