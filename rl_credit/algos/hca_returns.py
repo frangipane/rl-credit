@@ -23,15 +23,6 @@ class HCAReturns(BaseAlgo):
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
 
     def update_parameters(self, exps):
-        # Initialize update values
-
-        update_entropy = 0
-        update_value = 0
-        update_policy_loss = 0
-        update_value_loss = 0
-        update_hca_loss = 0
-        update_loss = 0
-
         # Compute loss
         dist, value, hca_logits = self.acmodel(exps.obs, exps.returnn)
 
@@ -57,19 +48,10 @@ class HCAReturns(BaseAlgo):
         loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss \
                + self.value_loss_coef * hca_loss  # TODO: use a separate hca_loss_coef
 
-        # Update batch values
-
-        update_entropy += entropy.item()
-        update_value += value.mean().item()
-        update_policy_loss += policy_loss.item()
-        update_value_loss += value_loss.item()
-        update_hca_loss += hca_loss.item()
-        update_loss += loss
-
         # Update actor-critic
 
         self.optimizer.zero_grad()
-        update_loss.backward()
+        loss.backward()
         update_grad_norm = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel.parameters()) ** 0.5
         torch.nn.utils.clip_grad_norm_(self.acmodel.parameters(), self.max_grad_norm)
         self.optimizer.step()
@@ -77,11 +59,12 @@ class HCAReturns(BaseAlgo):
         # Log some values
 
         logs = {
-            "entropy": update_entropy,
-            "value": update_value,
-            "policy_loss": update_policy_loss,
-            "value_loss": update_value_loss,
-            "grad_norm": update_grad_norm
+            "entropy": entropy.item(),
+            "value": value.mean().item(),
+            "policy_loss": policy_loss.item(),
+            "value_loss": value_loss.item(),
+            "grad_norm": update_grad_norm,
+            "hca": hca_loss.item()
         }
 
         return logs
