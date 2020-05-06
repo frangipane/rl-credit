@@ -39,19 +39,20 @@ class Agent:
 
         with torch.no_grad():
             if self.acmodel.recurrent:
-                dist, _, self.memories = self.acmodel(preprocessed_obss, self.memories)
+                dist, value, self.memories = self.acmodel(preprocessed_obss, self.memories)
             else:
-                dist, _ = self.acmodel(preprocessed_obss)
+                dist, value = self.acmodel(preprocessed_obss)
 
         if self.argmax:
             actions = dist.probs.max(1, keepdim=True)[1]
         else:
             actions = dist.sample()
 
-        return actions.cpu().numpy()
+        return actions.cpu().numpy(), dist.probs.cpu().numpy(), value.cpu().numpy()
 
     def get_action(self, obs):
-        return self.get_actions([obs])[0]
+        a, policy, value = self.get_actions([obs])
+        return a[0], policy[0], value[0]
 
     def analyze_feedbacks(self, rewards, dones):
         if self.acmodel.recurrent:

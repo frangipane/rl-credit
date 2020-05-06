@@ -77,7 +77,7 @@ for episode in range(args.episodes):
         if args.gif:
             frames.append(numpy.moveaxis(env.render("rgb_array"), 2, 0))
 
-        action = agent.get_action(obs)
+        action, _, _ = agent.get_action(obs)
         obs, reward, done, _ = env.step(action)
         agent.analyze_feedback(reward, done)
 
@@ -91,21 +91,6 @@ for episode in range(args.episodes):
         break
     env.render(close=True)  # close window after episode is over
 
-# Allow list of frames to contain contiguous images with different shapes
-# np_frames = []
-# prev_shape = frames[0].shape
-# ptr = 0
-# for i, frame in enumerate(frames):
-#     if frame.shape != prev_shape:
-#         np_frames.append(numpy.array(frames[ptr:i]))
-#         prev_shape = frame.shape
-#         ptr = i
-# # include last contiguous length (also accounts for case where
-# # all images are the same size)
-# np_frames.append(numpy.array(frames[ptr:]))
-
-# import pdb
-# pdb.set_trace()
 
 if args.gif:
     print("Saving gif... ", end="")
