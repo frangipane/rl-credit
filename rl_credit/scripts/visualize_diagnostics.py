@@ -1,6 +1,6 @@
 import argparse
 import time
-import numpy
+import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from gym_minigrid.window import Window
@@ -72,37 +72,68 @@ if args.gif:
 
 # Create a window to view the environment
 #env.render('human')
-class Diagnostics(Window):
-    def __init__(self, title):
-        super().__init__(title)
 
-    def plot_policy(self, pi, xticks=None):
-        self.ax.cla()
-        n_actions = len(pi)
-        x = range(n_actions)
-        self.ax.bar(x, pi)
-        self.ax.set_ylabel('Probability')
-        if xticks is not None:
-            self.ax.set_xticks(x)
-            self.ax.set_xticklabels(xticks)
-        #self.fig.canvas.draw()
+class PolicyPlot:
+    def __init__(self, action_names):
+        plt.ion()
+        self.fig, self.ax = plt.subplots(figsize=(6, 4))
+        self.action_names = action_names
 
-        plt.pause(0.001)
+        # initialize blank plot
+        self._rects = self.ax.bar(range(len(self.action_names)),
+                                  [0]*len(self.action_names),
+                                  tick_label=self.action_names)
+        self.ax.set_ylabel("Probability")
+        self.ax.set_title("Policy")
+
+    def plot(self, pi):
+        for rect, h in zip(self._rects, pi):
+            rect.set_height(h)
+        self.ax.autoscale_view(True, True, True)
+        self.ax.relim()
+        self.fig.canvas.draw()
+        plt.pause(0.0001)
+        return self.fig
+
+
+class ValuePlot:
+    def __init__(self, trailing_frames):
+        plt.ion()
+        self.fig, self.ax = plt.subplots(figsize=(6, 4))
+        self.ax.set_title("Value")
+        self.ax.set_xlabel("iteration")
+        self.ax.set_ylabel("value")
+        self.trailing_frames = trailing_frames
+        self.values = []
+
+        # initialize blank plot
+        self.val_plt, = plt.plot([], [], 'r-')
+
+    def plot(self):
+        frame_num = len(self.values)
+        idxs = slice(max(0, frame_num - self.trailing_frames), frame_num)
+        self.val_plt.set_data(range(frame_num)[idxs], self.values[idxs])
+        self.ax.autoscale_view(True, True, True)
+        self.ax.relim()
+        self.fig.canvas.draw()
+        plt.pause(0.0001)
+        return self.fig
+
 
 for episode in range(args.episodes):
-    piplot = Diagnostics('policy')
-
     obs = env.reset()
-    
+    policy_plot = PolicyPlot(action_names=[n.name for n in env.Actions])
+    value_plot = ValuePlot(trailing_frames=75)
 
     while True:
         env.render('human')
-        piplot.show(block=False)
         if args.gif:
-            frames.append(numpy.moveaxis(env.render("rgb_array"), 2, 0))
+            frames.append(np.moveaxis(env.render("rgb_array"), 2, 0))
 
         action, policy, value = agent.get_action(obs)
-        piplot.plot_policy(policy, xticks=[n.name for n in env.Actions])
+        value_plot.values.append(value)
+        value_fig = value_plot.plot()
+        policy_fig = policy_plot.plot(policy)
 
         obs, reward, done, _ = env.step(action)
         agent.analyze_feedback(reward, done)
@@ -116,6 +147,7 @@ for episode in range(args.episodes):
     if env.window.closed:
         break
     env.render(close=True)  # close window after episode is over
+    plt.close('all')
 
 
 if args.gif:
