@@ -70,7 +70,7 @@ log_episode_return = torch.zeros(args.procs, device=device)
 log_episode_num_frames = torch.zeros(args.procs, device=device)
 
 while log_done_counter < args.episodes:
-    actions = agent.get_actions(obss)
+    actions, _, _ = agent.get_actions(obss)
     obss, rewards, dones, _ = env.step(actions)
     agent.analyze_feedbacks(rewards, dones)
 
