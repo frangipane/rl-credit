@@ -31,6 +31,9 @@ parser.add_argument("--procs", type=int, default=16,
                     help="number of processes (default: 16)")
 parser.add_argument("--frames", type=int, default=10**7,
                     help="number of frames of training (default: 1e7)")
+parser.add_argument("--wandb", type=str, default=None,
+                    help="wandb project to output run")
+
 
 ## Parameters for main algorithm
 parser.add_argument("--epochs", type=int, default=4,
@@ -84,6 +87,21 @@ csv_file, csv_logger = utils.get_csv_logger(model_dir)
 
 txt_logger.info("{}\n".format(" ".join(sys.argv)))
 txt_logger.info("{}\n".format(args))
+
+# wandb logging
+
+if args.wandb is not None:
+    try:
+        import wandb
+        wandb.init(
+            project=args.wandb,
+            config=args.__dict__,
+            name=f"{args.algo}|{args.env}",
+            tags=[args.algo, args.env])
+    except:
+        print('To log run to wandb, please install wandb, e.g.: pip install wandb')
+        sys.exit(-1)
+
 
 # Set seed for all randomness sources
 
@@ -168,6 +186,7 @@ while num_frames < args.frames:
     exps, logs1 = algo.collect_experiences()
     logs2 = algo.update_parameters(exps)  # update period is set by num_frames_per_proc
     logs = {**logs1, **logs2}
+
     update_end_time = time.time()
 
     num_frames += logs["num_frames"]
@@ -219,3 +238,15 @@ while num_frames < args.frames:
             status["vocab"] = preprocess_obss.vocab.vocab
         utils.save_status(status, model_dir)
         txt_logger.info("Status saved")
+
+    # Wandb (optional) logging
+    if args.wandb is not None:
+        logs.pop('return_per_episode')
+        logs.pop('num_frames_per_episode')
+        logs.pop('reshaped_return_per_episode')
+        for x in ('mean', 'min', 'max'):
+            logs[f'return_per_episode_{x}'] = return_per_episode[x]
+            logs[f'frames_per_episode_{x}'] = num_frames_per_episode[x]
+        logs['update_number'] = update
+        logs['elapsed_time'] = duration
+        wandb.log(logs, step=num_frames)
