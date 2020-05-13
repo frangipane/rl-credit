@@ -5,6 +5,7 @@ import torch
 import rl_credit
 import tensorboardX
 import sys
+import numpy as np
 
 import script_utils as utils
 from model import ACModel, ACModelVanilla, ACModelReturnHCA, ACModelStateHCA
@@ -212,10 +213,10 @@ while num_frames < args.frames:
 
         txt_logger_output = "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}"
 
-        if "hca" in logs:
+        if "hca_loss" in logs:
             txt_logger_output += " | hca {:.2f}"
             header += ["hca_loss"]
-            data += [logs["hca"]]
+            data += [logs["hca_loss"]]
         txt_logger.info(txt_logger_output.format(*data))
 
         header += ["return_" + key for key in return_per_episode.keys()]
@@ -241,8 +242,8 @@ while num_frames < args.frames:
 
     # Wandb (optional) logging
     if args.wandb is not None:
-        logs.pop('return_per_episode')
-        logs.pop('num_frames_per_episode')
+        logs['returns_per_episode_std'] = np.std(logs.pop('return_per_episode'))
+        logs['num_frames_per_episode_std'] = np.std(logs.pop('num_frames_per_episode'))
         logs.pop('reshaped_return_per_episode')
         for x in ('mean', 'min', 'max'):
             logs[f'return_per_episode_{x}'] = return_per_episode[x]
