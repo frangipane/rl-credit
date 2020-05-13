@@ -36,6 +36,15 @@ class HCAReturns(BaseAlgo):
             pi_hca_ratio = torch.exp(exps.log_prob) / hca_prob
             hca_factor = (1 - pi_hca_ratio) * exps.returnn
 
+            # for logging
+            hca_mean = hca_factor.mean().item()
+            hca_std = hca_factor.std().item()
+            adv_mean = exps.advantage.mean().item()
+            adv_std = exps.advantage.std().item()
+
+            pearson_corr = ((hca_factor - hca_mean) * (exps.advantage - adv_mean)).mean() \
+                           / (hca_std * adv_std)
+            logs['hca_adv_corr'] = pearson_corr.item()
             logs['hca_prob_max'] = hca_prob.max().item()
             logs['hca_prob_min'] = hca_prob.min().item()
             logs['hca_prob_mean'] = hca_prob.mean().item()
@@ -77,7 +86,12 @@ class HCAReturns(BaseAlgo):
             "hca_loss": hca_loss.item(),
             "hca_max": hca_factor.max().item(),
             "hca_min": hca_factor.min().item(),
-            "hca_mean": hca_factor.mean().item(),
+            "hca_mean": hca_mean,
+            "hca_std": hca_std,
+            "adv_max": exps.advantage.max().item(),
+            "adv_min": exps.advantage.min().item(),
+            "adv_mean": adv_mean,
+            "adv_std": adv_std,
         })
 
         return logs

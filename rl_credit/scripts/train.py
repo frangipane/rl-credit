@@ -5,6 +5,7 @@ import torch
 import rl_credit
 import tensorboardX
 import sys
+import numpy as np
 
 import script_utils as utils
 from model import ACModel, ACModelVanilla, ACModelReturnHCA, ACModelStateHCA
@@ -241,8 +242,8 @@ while num_frames < args.frames:
 
     # Wandb (optional) logging
     if args.wandb is not None:
-        logs.pop('return_per_episode')
-        logs.pop('num_frames_per_episode')
+        logs['returns_per_episode_std'] = np.std(logs.pop('return_per_episode'))
+        logs['num_frames_per_episode_std'] = np.std(logs.pop('num_frames_per_episode'))
         logs.pop('reshaped_return_per_episode')
         for x in ('mean', 'min', 'max'):
             logs[f'return_per_episode_{x}'] = return_per_episode[x]
