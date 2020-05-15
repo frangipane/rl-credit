@@ -189,15 +189,29 @@ class ACModelVanilla(nn.Module, BaseModel):
 
 
 class ACModelReturnHCA(ACModelVanilla):
-    def __init__(self, obs_space, action_space):
+    def __init__(self, obs_space, action_space, return_bins=None):
+        """
+        return_bins : torch.tensor
+            1-dimensional, containing returns associated w/ each bin
+        """
         super().__init__(obs_space, action_space)
+        self._return_bins = return_bins
+        if self._return_bins is not None:
+            self._num_bins = len(return_bins)
 
         ## Define return-conditional HCA model
-        self.return_hca = nn.Sequential(
-            nn.Linear(self.image_embedding_size + 1, 64),  # +1 comes from scalar return Z
-            nn.Tanh(),
-            nn.Linear(64, action_space.n)
-        )
+        if self._return_bins is not None:
+            self.return_hca = nn.Sequential(
+                nn.Linear(self.image_embedding_size + self._num_bins, 64),
+                nn.Tanh(),
+                nn.Linear(64, action_space.n)
+            )
+        else:
+            self.return_hca = nn.Sequential(
+                nn.Linear(self.image_embedding_size + 1, 64),  # +1 comes from scalar return Z
+                nn.Tanh(),
+                nn.Linear(64, action_space.n)
+            )
 
         # Initialize parameters correctly
         self.apply(init_params)
@@ -216,7 +230,16 @@ class ACModelReturnHCA(ACModelVanilla):
         value = x.squeeze(1)
 
         if z is not None:
-            hca_logits = self.return_hca(torch.cat((embedding, torch.unsqueeze(z,1)), 1))
+            if self._return_bins is not None:
+                bin_idx = (torch.abs(self._return_bins.expand(z.shape[0], self._num_bins) - \
+                                     z.unsqueeze(1))
+                           .argmin(axis=1)
+                )
+                binned_return = F.one_hot(bin_idx, self._num_bins)
+                hca_logits = self.return_hca(
+                    torch.cat((embedding, binned_return.float()), 1))
+            else:
+                hca_logits = self.return_hca(torch.cat((embedding, torch.unsqueeze(z,1)), 1))
             return dist, value, hca_logits
 
         return dist, value
