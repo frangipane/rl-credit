@@ -177,24 +177,28 @@ print('Number of frames:', num_frames)
 # Evaluate hca for both models
 def get_hca_probs(Z):
     with torch.no_grad():
-        _, _, hca_logits = acmodel(preprocess_obss(buf.observations),
+        dist1, _, hca_logits = acmodel(preprocess_obss(buf.observations),
                                    torch.tensor([Z]*num_frames))
         hca_probs = F.softmax(hca_logits).numpy()
 
-        _, _, hca_logits2 = acmodel2(preprocess_obss(buf.observations),
+        dist2, _, hca_logits2 = acmodel2(preprocess_obss(buf.observations),
                                      torch.tensor([Z]*num_frames))
         hca_probs2 = F.softmax(hca_logits2).numpy()
 
-    return hca_probs, hca_probs2
+    return hca_probs, hca_probs2, dist1.probs, dist2.probs
 
-# plot HCA for a fixed return!
-hca_probs, hca_probs2 = get_hca_probs(Z=3.6)
+# plot HCA probabilities for a fixed return for the manual trajectory!
+# (policy is independent of Z)
+hca_probs, hca_probs2, pi_probs1, pi_probs2 = get_hca_probs(Z=3.6)
 
 fig, ax = plt.subplots(figsize=(8,6))
 action_names=[n.name for n in env.Actions]
 
 for a in range(env.action_space.n):
     plt.plot(hca_probs[:,a], hca_probs2[:,a], label=action_names[a])
+    plt.title('HCA probabiltiies per action along trajectory')
+    plt.xlabel('model 1 policy')
+    plt.ylabel('model 2 policy')
 plt.legend()
 plt.show()
 
@@ -207,8 +211,8 @@ divergences = []
 
 zs = np.arange(0, 4, 0.1)
 for z in zs:
-    hca_probs, hca_probs2 = get_hca_probs(z)
-    diverg = (np.log(hca_probs) - np.log(hca_probs2)).mean(axis=1)  # diverg per obs
+    hca_probs, hca_probs2, _, _ = get_hca_probs(z)
+    diverg = np.abs(np.log(hca_probs) - np.log(hca_probs2)).mean(axis=1)  # diverg per obs
     divergences.append(diverg)
     hca.append(hca_probs[i,:])
 
@@ -217,8 +221,19 @@ for z in zs:
 divergences_array = np.array(divergences)
 print(divergences_array.shape)
 plt.matshow(divergences_array)
+plt.title("HCA divergence b/w model 1 and 2")
 plt.xlabel('observation number')
-#plt.ylabel('Return')
+plt.ylabel('Return idx')
+plt.colorbar()
+plt.show()
+
+
+# Plot divergences per observation, per return, normalized by pi divergence
+pi_diverg = np.abs(np.log(pi_probs1) - np.log(pi_probs2)).mean(axis=1)
+plt.matshow(divergences_array / pi_diverg)
+plt.title("HCA divergence, normalized by\n pi divergence, b/w model 1 and 2")
+plt.xlabel('observation number')
+plt.ylabel('Return idx')
 plt.colorbar()
 plt.show()
 
@@ -227,5 +242,8 @@ plt.show()
 # given different returns
 print('hca probs')
 plt.matshow(np.array(hca))
+plt.xlabel('Return idx')
+plt.ylabel('Action number')
+plt.title("Probability per action for ith obs")
 plt.colorbar()
 plt.show()
