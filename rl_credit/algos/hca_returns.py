@@ -22,6 +22,7 @@ class HCAReturns(BaseAlgo):
         self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
 
+
     def update_parameters(self, exps):
         logs = {}
 
@@ -77,6 +78,12 @@ class HCAReturns(BaseAlgo):
 
         # Log some values
 
+        # evaluate KL divergence b/w old and new policy
+        with torch.no_grad():
+            # policy under newly updated model
+            dist, _, = self.acmodel(exps.obs)
+            approx_kl = (exps.log_prob - dist.log_prob(exps.action)).mean().item()
+
         logs.update({
             "entropy": entropy.item(),
             "value": value.mean().item(),
@@ -92,6 +99,7 @@ class HCAReturns(BaseAlgo):
             "adv_min": exps.advantage.min().item(),
             "adv_mean": adv_mean,
             "adv_std": adv_std,
+            "kl": approx_kl,
         })
 
         return logs

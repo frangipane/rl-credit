@@ -212,9 +212,9 @@ class BaseAlgo(ABC):
         exps.value = self.values.transpose(0, 1).reshape(-1)
         exps.reward = self.rewards.transpose(0, 1).reshape(-1)
         exps.advantage = self.advantages.transpose(0, 1).reshape(-1)
+        exps.returnn = exps.value + exps.advantage
         # normalize the advantage
         exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
-        exps.returnn = exps.value + exps.advantage
         exps.log_prob = self.log_probs.transpose(0, 1).reshape(-1)
 
         # Preprocess experiences
