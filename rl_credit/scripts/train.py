@@ -34,6 +34,10 @@ parser.add_argument("--frames", type=int, default=10**7,
                     help="number of frames of training (default: 1e7)")
 parser.add_argument("--wandb", type=str, default=None,
                     help="wandb project to output run")
+parser.add_argument("--wandb-name-suffix", type=str, default=None,
+                    help="suffix to append to wandb run name")
+parser.add_argument("--wandb-notes", type=str, default=None,
+                    help="description associated with wandb run")
 
 
 ## Parameters for main algorithm
@@ -93,12 +97,18 @@ txt_logger.info("{}\n".format(args))
 
 if args.wandb is not None:
     try:
+        if args.wandb_name_suffix is not None:
+            wandb_name = f"{args.algo}|{args.env}|{args.wandb_name_suffix}"
+        else:
+            wandb_name = f"{args.algo}|{args.env}"
         import wandb
         wandb.init(
             project=args.wandb,
             config=args.__dict__,
-            name=f"{args.algo}|{args.env}",
-            tags=[args.algo, args.env])
+            name=wandb_name,
+            tags=[args.algo, args.env],
+            notes=args.wandb_notes,
+        )
     except:
         print('To log run to wandb, please install wandb, e.g.: pip install wandb')
         sys.exit(-1)
