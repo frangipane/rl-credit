@@ -82,12 +82,35 @@ class A2CAlgo(BaseAlgo):
 
         # Log some values
 
+        with torch.no_grad():
+            # evaluate KL divergence b/w old and new policy
+            # policy under newly updated model
+            if self.acmodel.recurrent:
+                dist, _, _ = self.acmodel(exps.obs, exps.memory * exps.mask)
+            else:
+                dist, _ = self.acmodel(exps.obs)
+
+            approx_kl = (exps.log_prob - dist.log_prob(exps.action)).mean().item()
+            adv_mean = exps.advantage.mean().item()
+            adv_max = exps.advantage.max().item()
+            adv_min = exps.advantage.min().item()
+            adv_std = exps.advantage.std().item()
+
+            # standard deviation of values
+            value_std = value.std().item()
+
         logs = {
             "entropy": update_entropy,
             "value": update_value,
+            "value_std": value_std,
             "policy_loss": update_policy_loss,
             "value_loss": update_value_loss,
-            "grad_norm": update_grad_norm
+            "grad_norm": update_grad_norm,
+            "adv_max": adv_max,
+            "adv_min": adv_min,
+            "adv_mean": adv_mean,
+            "adv_std": adv_std,
+            "kl": approx_kl,
         }
 
         return logs
