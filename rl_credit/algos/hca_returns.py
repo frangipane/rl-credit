@@ -22,7 +22,6 @@ class HCAReturns(BaseAlgo):
         self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
 
-
     def update_parameters(self, exps):
         logs = {}
 
@@ -96,7 +95,6 @@ class HCAReturns(BaseAlgo):
             "policy_loss": policy_loss.item(),
             "value_loss": value_loss.item(),
             "grad_norm": update_grad_norm,
-            "value_std": value_std,
             "hca_loss": hca_loss.item(),
             "hca_max": hca_factor.max().item(),
             "hca_min": hca_factor.min().item(),
