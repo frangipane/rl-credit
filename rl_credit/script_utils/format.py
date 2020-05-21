@@ -6,7 +6,7 @@ import torch
 import rl_credit
 import gym
 
-import script_utils as utils
+import rl_credit.script_utils as utils
 
 
 def get_obss_preprocessor(obs_space):

@@ -8,7 +8,7 @@ import sys
 import numpy as np
 
 import script_utils as utils
-from model import ACModel, ACModelVanilla, ACModelReturnHCA, ACModelStateHCA
+from model import ACModel, ACModelVanilla, ACModelReturnHCA, ACModelStateHCA, A2CAttention
 
 
 # Parse arguments
@@ -69,6 +69,9 @@ parser.add_argument("--recurrence", type=int, default=1,
                     help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 parser.add_argument("--text", action="store_true", default=False,
                     help="add a GRU to the model to handle text input")
+parser.add_argument("--d-key", type=int, default=5,
+                    help="rank of attention matrix (default: 5)")
+
 
 args = parser.parse_args()
 
@@ -98,7 +101,7 @@ txt_logger.info("{}\n".format(args))
 if args.wandb is not None:
     try:
         if args.wandb_name_suffix is not None:
-            wandb_name = f"{args.algo}|{args.env}|{args.wandb_name_suffix}"
+            wandb_name = f"{args.algo}|{args.wandb_name_suffix}|{args.env}"
         else:
             wandb_name = f"{args.algo}|{args.env}"
         import wandb
@@ -140,7 +143,11 @@ txt_logger.info("Training status loaded\n")
 
 # Load observations preprocessor
 
-obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
+if args.algo == "attention":
+    from rl_credit.algos.attention import get_obss_preprocessor
+    obs_space, preprocess_obss = get_obss_preprocessor(envs[0].observation_space)
+else:
+    obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
 if "vocab" in status:
     preprocess_obss.vocab.load_vocab(status["vocab"])
 txt_logger.info("Observations preprocessor loaded")
@@ -151,6 +158,8 @@ if args.algo == "hca_returns":
     acmodel = ACModelReturnHCA(obs_space, envs[0].action_space)
 elif args.algo == "hca_state":
     acmodel = ACModelStateHCA(obs_space, envs[0].action_space)
+elif args.algo == "attention":
+    acmodel = A2CAttention(obs_space, envs[0].action_space, d_key=args.d_key)
 else:
     acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
 if "model_state" in status:
@@ -177,6 +186,11 @@ elif args.algo == "hca_state":
     algo = rl_credit.HCAState(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                             args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                             args.optim_alpha, args.optim_eps, preprocess_obss)
+elif args.algo == "attention":
+    
+    algo = rl_credit.AttentionAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
+                                   args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
+                                   args.optim_alpha, args.optim_eps, preprocess_obss)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
@@ -194,8 +208,13 @@ while num_frames < args.frames:
     # Update model parameters
 
     update_start_time = time.time()
-    exps, logs1 = algo.collect_experiences()
-    logs2 = algo.update_parameters(exps)  # update period is set by num_frames_per_proc
+    if args.algo == "attention":
+        obss, exps, logs1 = algo.collect_experiences()
+        logs2 = algo.update_parameters(obss, exps)
+    else:
+        exps, logs1 = algo.collect_experiences()
+        logs2 = algo.update_parameters(exps)  # update period is set by num_frames_per_proc
+
     logs = {**logs1, **logs2}
 
     update_end_time = time.time()

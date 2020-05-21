@@ -1,7 +1,7 @@
 import torch
 
-import script_utils as utils
-from model import ACModel, ACModelReturnHCA, ACModelStateHCA
+import rl_credit.script_utils as utils
+from rl_credit.model import ACModel, ACModelReturnHCA, ACModelStateHCA, A2CAttention
 
 
 class Agent:
@@ -13,12 +13,18 @@ class Agent:
 
     def __init__(self, obs_space, action_space, model_dir,
                  device=None, argmax=False, num_envs=1, use_memory=False, use_text=False,
-                 hca_returns=False, hca_state=False):
-        obs_space, self.preprocess_obss = utils.get_obss_preprocessor(obs_space)
+                 hca_returns=False, hca_state=False, attention=False, d_key=5):
+        if attention is True:
+            from rl_credit.algos.attention import get_obss_preprocessor
+            obs_space, self.preprocess_obss = get_obss_preprocessor(obs_space)
+        else:
+            obs_space, self.preprocess_obss = utils.get_obss_preprocessor(obs_space)
         if hca_returns:
             self.acmodel = ACModelReturnHCA(obs_space, action_space)
         elif hca_state:
             self.acmodel = ACModelStateHCA(obs_space, action_space)
+        elif attention:
+            self.acmodel = A2CAttention(obs_space, action_space, d_key)
         else:
             self.acmodel = ACModel(obs_space, action_space, use_memory=use_memory, use_text=use_text)
         self.device = device

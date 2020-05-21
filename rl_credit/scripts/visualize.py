@@ -33,6 +33,10 @@ parser.add_argument("--hcareturns", action="store_true", default=False,
                     help="use HCA returns model")
 parser.add_argument("--hcastate", action="store_true", default=False,
                     help="use HCA state model")
+parser.add_argument("--attention", action="store_true", default=False,
+                    help="use A2CAttention model")
+parser.add_argument("--d-key", type=int, default=5,
+                    help="rank of attention matrix (default: 5)")
 
 args = parser.parse_args()
 
@@ -57,7 +61,8 @@ print("Environment loaded\n")
 model_dir = utils.get_model_dir(args.model)
 agent = utils.Agent(env.observation_space, env.action_space, model_dir,
                     device=device, argmax=args.argmax, use_memory=args.memory, use_text=args.text,
-                    hca_returns=args.hcareturns, hca_state=args.hcastate)
+                    hca_returns=args.hcareturns, hca_state=args.hcastate, attention=args.attention,
+                    d_key=args.d_key)
 print("Agent loaded\n")
 
 # Run the agent

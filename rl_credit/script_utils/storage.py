@@ -4,7 +4,7 @@ import torch
 import logging
 import sys
 
-import script_utils as utils
+import rl_credit.script_utils as utils
 
 
 def create_folders_if_necessary(path):
