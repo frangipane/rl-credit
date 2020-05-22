@@ -362,7 +362,22 @@ class A2CAttention(nn.Module, BaseModel):
         # Initialize parameters correctly
         self.apply(init_params)
 
-    def forward(self, obs, mask_future=True):
+    def forward(self, obs, mask_future=True, attn_custom_mask=None):
+        """
+        obs : torch.tensor, dtype=float,
+            of size (batch_size, ep_len, image_H, image_W, image_C)
+
+        mask_future : bool,
+            If True, apply mask so observations cannot attend to future obs, only
+            previous obs.
+
+        attn_custom_mask : torch.tensor, dtype=bool,
+            mask for attention scores of dimension (batch_size, ep_len, ep_len), where
+            elements that are True are to be zeroed out.
+
+            Expected use case: mask elements outside block-diagonal so that observations
+            that are in different episodes cannot attend to each other.
+        """
         # expect obs to be dim 5, but for compatibility with other scripts
         # that don't have an extra dimension for sequence length, add
         # an extra dimension if obs dim is 4
@@ -399,6 +414,10 @@ class A2CAttention(nn.Module, BaseModel):
         values = self.Wv(embedding).view(batch_size, ep_len, self.d_key)
 
         scores = torch.bmm(queries, keys.transpose(1, 2))
+
+        # Custom mask
+        if attn_custom_mask is not None:
+            scores.masked_fill_(attn_custom_mask, float('-inf'))
 
         # Filter out self attention to future values
         if mask_future is True:
