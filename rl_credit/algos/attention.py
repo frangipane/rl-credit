@@ -89,6 +89,8 @@ class BaseAlgo(ABC):
         self.obss = [None]*(shape[0])
         self.mask = torch.ones(shape[1], device=self.device)
         self.masks = torch.zeros(*shape, device=self.device)
+        self.seq_labels = torch.zeros(*shape, device=self.device)
+        self.seq_label_delta = torch.zeros(shape[1], device=self.device)
         self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
         self.values = torch.zeros(*shape, device=self.device)
         self.rewards = torch.zeros(*shape, device=self.device)
@@ -146,6 +148,11 @@ class BaseAlgo(ABC):
             self.obs = obs
             self.masks[i] = self.mask
             self.mask = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
+
+            self.seq_label_delta = (1 - self.masks[i-1]) if i > 0 else 0
+            self.seq_labels[i] = self.seq_labels[i-1] + self.seq_label_delta if i > 0 \
+                                 else self.seq_labels[i]
+
             self.actions[i] = action
             if self.reshape_reward is not None:
                 self.rewards[i] = torch.tensor([
@@ -201,9 +208,19 @@ class BaseAlgo(ABC):
 
         # ===== Add advantage and return to experiences =====
 
+        # Create block diagonal mask for observations from different
+        # episodes don't pay attention to each other
+        # T x P -> P x T -> P x 1 x T -> P x T x T
+        seq_labels = (self.seq_labels
+                      .transpose(0, 1)
+                      .unsqueeze(1)
+                      .expand(-1, self.num_frames_per_proc, -1))
+        # mask picks out elements outside the block diagonal to be masked out
+        attn_mask = (seq_labels - seq_labels.transpose(2, 1)) != 0
+
         # Calculate values using whole context from episode
         with torch.no_grad():
-            _, value = self.acmodel(obss_mat)
+            _, value = self.acmodel(obss_mat, mask_future=True, attn_custom_mask=attn_mask)
 
         self.values = value.reshape(self.num_frames_per_proc, self.num_procs)
         # last observations per episode
