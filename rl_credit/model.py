@@ -315,3 +315,100 @@ class ACModelStateHCA(ACModelVanilla):
             return dist, value, reward
 
         return dist, value
+
+
+class A2CAttention(nn.Module, BaseModel):
+    def __init__(self, obs_space, action_space, d_key=5):
+        """
+        d_key : int, dimension of image embedding projected
+           to query (and key) for attention
+        """
+        super().__init__()
+
+        # Define image embedding
+        self.image_conv = nn.Sequential(
+            nn.Conv2d(3, 16, (2, 2)),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),
+            nn.Conv2d(16, 32, (2, 2)),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, (2, 2)),
+            nn.ReLU()
+        )
+        n = obs_space[0]
+        m = obs_space[1]
+        self.image_embedding_size = ((n-1)//2-2)*((m-1)//2-2)*64
+
+        # Define actor's model
+        self.actor = nn.Sequential(
+            nn.Linear(self.image_embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, action_space.n)
+        )
+
+        # Define self-attention vector for input into critic
+        self.d_key = d_key
+        self.Wq = nn.Linear(self.image_embedding_size, d_key, bias=False)
+        self.Wk = nn.Linear(self.image_embedding_size, d_key, bias=False)
+        self.Wv = nn.Linear(self.image_embedding_size, d_key, bias=False)
+
+        # Define critic's model
+        self.critic = nn.Sequential(
+            nn.Linear(self.d_key, 32),
+            nn.Tanh(),
+            nn.Linear(32, 1)
+        )
+
+        # Initialize parameters correctly
+        self.apply(init_params)
+
+    def forward(self, obs, mask_future=True):
+        # expect obs to be dim 5, but for compatibility with other scripts
+        # that don't have an extra dimension for sequence length, add
+        # an extra dimension if obs dim is 4
+        if obs.dim() == 4:
+            obs = obs.unsqueeze(1)
+
+        batch_size, ep_len, h, w, c = obs.shape
+
+        if ep_len == 1:
+            obs = torch.squeeze(obs, dim=1)
+        elif ep_len > 1:
+            obs = obs.reshape(batch_size * ep_len, h, w, c)
+
+        x = obs.transpose(1, 3).transpose(2, 3)
+        x = self.image_conv(x)
+        x = x.reshape(x.shape[0], -1)
+
+        embedding = x  # dim 2: (batch_size * ep_len, embedding size)
+
+        # policy
+        x = self.actor(embedding)
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+
+        if ep_len == 1:
+            # forward pass is just a single step in to figure out action to take
+            # in env, so skip value evaluation
+            # TODO: allow value prediction for single obs / use context vector
+            # use 0 as placeholder temporary
+            return dist, torch.tensor([0.])
+
+        # ==== attention before critic ====
+        queries = self.Wq(embedding).view(batch_size, ep_len, self.d_key) / (self.d_key ** (1/4))
+        keys = self.Wk(embedding).view(batch_size, ep_len, self.d_key) / (self.d_key ** (1/4))
+        values = self.Wv(embedding).view(batch_size, ep_len, self.d_key)
+
+        scores = torch.bmm(queries, keys.transpose(1, 2))
+
+        # Filter out self attention to future values
+        if mask_future is True:
+            scores_mask = torch.ones([ep_len, ep_len]).tril()
+            scores.masked_fill_(scores_mask == 0, float('-inf'))
+
+        scores = F.softmax(scores, dim=2)    # shape = (batch_size, ep_len, ep_len)
+        attn_out = torch.bmm(scores, values)  # shape = (batch_size, ep_len, d_key)
+
+        x = self.critic(attn_out.view(batch_size * ep_len, self.d_key))
+        value = x.squeeze(1)
+
+        return dist, value
