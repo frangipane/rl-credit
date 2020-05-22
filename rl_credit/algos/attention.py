@@ -87,9 +87,6 @@ class BaseAlgo(ABC):
 
         self.obs = self.env.reset()
         self.obss = [None]*(shape[0])
-        if self.acmodel.recurrent:
-            self.memory = torch.zeros(shape[1], self.acmodel.memory_size, device=self.device)
-            self.memories = torch.zeros(*shape, self.acmodel.memory_size, device=self.device)
         self.mask = torch.ones(shape[1], device=self.device)
         self.masks = torch.zeros(*shape, device=self.device)
         self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
@@ -139,10 +136,7 @@ class BaseAlgo(ABC):
             preprocessed_obs = torch.unsqueeze(preprocessed_obs, dim=1)
 
             with torch.no_grad():
-                if self.acmodel.recurrent:
-                    dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
-                else:
-                    dist, _ = self.acmodel(preprocessed_obs)
+                dist, _ = self.acmodel(preprocessed_obs)
             action = dist.sample()
 
             obs, reward, done, _ = self.env.step(action.cpu().numpy())
@@ -150,13 +144,9 @@ class BaseAlgo(ABC):
 
             self.obss[i] = self.obs
             self.obs = obs
-            if self.acmodel.recurrent:
-                self.memories[i] = self.memory
-                self.memory = memory
             self.masks[i] = self.mask
             self.mask = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
             self.actions[i] = action
-            #self.values[i] = value
             if self.reshape_reward is not None:
                 self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
@@ -183,27 +173,6 @@ class BaseAlgo(ABC):
             self.log_episode_reshaped_return *= self.mask
             self.log_episode_num_frames *= self.mask
 
-        # Add advantage and return to experiences
-
-        preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
-        preprocessed_obs = torch.unsqueeze(preprocessed_obs, dim=1)
-
-        # bootstrapped final value for unfinished trajectories cut off by end
-        # of epoch (=num frames per proc)
-        with torch.no_grad():
-            if self.acmodel.recurrent:
-                _, next_value, _ = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
-            else:
-                _, next_value = self.acmodel(preprocessed_obs)
-
-        for i in reversed(range(self.num_frames_per_proc)):
-            next_mask = self.masks[i+1] if i < self.num_frames_per_proc - 1 else self.mask
-            next_value = self.values[i+1] if i < self.num_frames_per_proc - 1 else next_value
-            next_advantage = self.advantages[i+1] if i < self.num_frames_per_proc - 1 else 0
-
-            delta = self.rewards[i] + self.discount * next_value * next_mask - self.values[i]
-            self.advantages[i] = delta + self.discount * self.gae_lambda * next_advantage * next_mask
-
         # Define experiences:
         #   the whole experience is the concatenation of the experience
         #   of each process.
@@ -223,21 +192,11 @@ class BaseAlgo(ABC):
         # exps.obs = [self.obss[i][j]
         #             for j in range(self.num_procs)
         #             for i in range(self.num_frames_per_proc)]
-        if self.acmodel.recurrent:
-            # T x P x D -> P x T x D -> (P * T) x D
-            exps.memory = self.memories.transpose(0, 1).reshape(-1, *self.memories.shape[2:])
-            # T x P -> P x T -> (P * T) x 1
-            exps.mask = self.masks.transpose(0, 1).reshape(-1).unsqueeze(1)
+        # T x P -> P x T -> (P * T) x 1
+        exps.mask = self.masks.transpose(0, 1).reshape(-1).unsqueeze(1)
         # for all tensors below, T x P -> P x T -> P * T
         exps.action = self.actions.transpose(0, 1).reshape(-1)
-        exps.value = self.values.transpose(0, 1).reshape(-1)
         exps.reward = self.rewards.transpose(0, 1).reshape(-1)
-        exps.advantage = self.advantages.transpose(0, 1).reshape(-1)
-
-        # TODO: calculate returnn later (need value fxn for batch of obs in episode)
-        exps.returnn = exps.value + exps.advantage
-        # normalize the advantage
-        exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
         exps.log_prob = self.log_probs.transpose(0, 1).reshape(-1)
 
         # Preprocess experiences
@@ -283,64 +242,52 @@ class AttentionAlgo(BaseAlgo):
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
 
     def update_parameters(self, obss, exps):
-        # Compute starting indexes
+        # Calculate values using whole context from episode
+        with torch.no_grad():
+            _, value = self.acmodel(obss)
 
-        inds = self._get_starting_indexes()
+        # ===== Add advantage and return to experiences =====
+        self.values = value.reshape(self.num_frames_per_proc, self.num_procs)
+        # last observations per episode
+        preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
+        preprocessed_obs = torch.unsqueeze(preprocessed_obs, dim=1)
 
-        # Initialize update values
+        # bootstrapped final value for unfinished trajectories cut off by end
+        # of epoch (=num frames per proc)
+        with torch.no_grad():
+            _, next_value = self.acmodel(preprocessed_obs)
 
-        update_entropy = 0
-        update_value = 0
-        update_policy_loss = 0
-        update_value_loss = 0
-        update_loss = 0
+        for i in reversed(range(self.num_frames_per_proc)):
+            next_mask = self.masks[i+1] if i < self.num_frames_per_proc - 1 else self.mask
+            next_value = self.values[i+1] if i < self.num_frames_per_proc - 1 else next_value
+            next_advantage = self.advantages[i+1] if i < self.num_frames_per_proc - 1 else 0
 
-        # Initialize memory
+            delta = self.rewards[i] + self.discount * next_value * next_mask - self.values[i]
+            self.advantages[i] = delta + self.discount * self.gae_lambda * next_advantage * next_mask
 
-        if self.acmodel.recurrent:
-            memory = exps.memory[inds]
+        exps.value = self.values.transpose(0, 1).reshape(-1)
+        exps.advantage = self.advantages.transpose(0, 1).reshape(-1)
+        exps.returnn = exps.value + exps.advantage
+        # normalize the advantage
+        exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
 
-        for i in range(self.recurrence):
-            # Create a sub-batch of experience
 
-            sb = exps[inds + i]
+        # ===== Calculate losses =====
 
-            # Compute loss
+        dist, value = self.acmodel(obss)
 
-            if self.acmodel.recurrent:
-                dist, value, memory = self.acmodel(sb.obs, memory * sb.mask)
-            else:
-                #dist, value = self.acmodel(sb.obs)
-                dist, value = self.acmodel(obss)
+        entropy = dist.entropy().mean()
 
-            entropy = dist.entropy().mean()
+        policy_loss = -(dist.log_prob(exps.action) * exps.advantage).mean()
 
-            policy_loss = -(dist.log_prob(sb.action) * sb.advantage).mean()
+        value_loss = (value - exps.returnn).pow(2).mean()
 
-            value_loss = (value - sb.returnn).pow(2).mean()
-
-            loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss
-
-            # Update batch values
-
-            update_entropy += entropy.item()
-            update_value += value.mean().item()
-            update_policy_loss += policy_loss.item()
-            update_value_loss += value_loss.item()
-            update_loss += loss
-
-        # Update update values
-
-        update_entropy /= self.recurrence
-        update_value /= self.recurrence
-        update_policy_loss /= self.recurrence
-        update_value_loss /= self.recurrence
-        update_loss /= self.recurrence
+        loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss
 
         # Update actor-critic
 
         self.optimizer.zero_grad()
-        update_loss.backward()
+        loss.backward()
         update_grad_norm = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel.parameters()) ** 0.5
         torch.nn.utils.clip_grad_norm_(self.acmodel.parameters(), self.max_grad_norm)
         self.optimizer.step()
@@ -350,10 +297,7 @@ class AttentionAlgo(BaseAlgo):
         with torch.no_grad():
             # evaluate KL divergence b/w old and new policy
             # policy under newly updated model
-            if self.acmodel.recurrent:
-                dist, _, _ = self.acmodel(exps.obs, exps.memory * exps.mask)
-            else:
-                dist, _ = self.acmodel(obss)
+            dist, _ = self.acmodel(obss)
 
             approx_kl = (exps.log_prob - dist.log_prob(exps.action)).mean().item()
             adv_mean = exps.advantage.mean().item()
@@ -365,11 +309,11 @@ class AttentionAlgo(BaseAlgo):
             value_std = value.std().item()
 
         logs = {
-            "entropy": update_entropy,
-            "value": update_value,
+            "entropy": entropy.item(),
+            "value": value.mean().item(),
             "value_std": value_std,
-            "policy_loss": update_policy_loss,
-            "value_loss": update_value_loss,
+            "policy_loss": policy_loss.item(),
+            "value_loss": value_loss.item(),
             "grad_norm": update_grad_norm,
             "adv_max": adv_max,
             "adv_min": adv_min,
@@ -377,7 +321,6 @@ class AttentionAlgo(BaseAlgo):
             "adv_std": adv_std,
             "kl": approx_kl,
         }
-
         return logs
 
     def _get_starting_indexes(self):
