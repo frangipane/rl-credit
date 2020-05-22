@@ -182,11 +182,11 @@ class BaseAlgo(ABC):
         #   - D is the dimensionality.
 
         # Reshape obss into tensor of (batch size=num_procs, seq len=frames per proc, *(image_dim))
-        self.obss_mat = [None]*(self.num_procs)
+        obss_mat = [None]*(self.num_procs)
         for i in range(self.num_procs):
-            self.obss_mat[i] = self.preprocess_obss([self.obss[j][i]
-                                                     for j in range(self.num_frames_per_proc)])
-        self.obss_mat = torch.cat(self.obss_mat).view(self.num_procs, *self.obss_mat[0].shape)
+            obss_mat[i] = self.preprocess_obss([self.obss[j][i]
+                                                for j in range(self.num_frames_per_proc)])
+        obss_mat = torch.cat(obss_mat).view(self.num_procs, *obss_mat[0].shape)
         
         exps = DictList()
         # exps.obs = [self.obss[i][j]
@@ -199,54 +199,12 @@ class BaseAlgo(ABC):
         exps.reward = self.rewards.transpose(0, 1).reshape(-1)
         exps.log_prob = self.log_probs.transpose(0, 1).reshape(-1)
 
-        # Preprocess experiences
+        # ===== Add advantage and return to experiences =====
 
-        #exps.obs = self.preprocess_obss(exps.obs, device=self.device)
-
-        # Log some values
-
-        keep = max(self.log_done_counter, self.num_procs)
-
-        logs = {
-            "return_per_episode": self.log_return[-keep:],
-            "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
-            "num_frames_per_episode": self.log_num_frames[-keep:],
-            "num_frames": self.num_frames
-        }
-
-        self.log_done_counter = 0
-        self.log_return = self.log_return[-self.num_procs:]
-        self.log_reshaped_return = self.log_reshaped_return[-self.num_procs:]
-        self.log_num_frames = self.log_num_frames[-self.num_procs:]
-
-        #return exps, logs
-        return self.obss_mat, exps, logs
-
-    @abstractmethod
-    def update_parameters(self):
-        pass
-
-
-class AttentionAlgo(BaseAlgo):
-    """The Advantage Actor-Critic algorithm."""
-
-    def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
-                 entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
-                 rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None, reshape_reward=None):
-        num_frames_per_proc = num_frames_per_proc or 8
-
-        super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward)
-
-        self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
-                                             alpha=rmsprop_alpha, eps=rmsprop_eps)
-
-    def update_parameters(self, obss, exps):
         # Calculate values using whole context from episode
         with torch.no_grad():
-            _, value = self.acmodel(obss)
+            _, value = self.acmodel(obss_mat)
 
-        # ===== Add advantage and return to experiences =====
         self.values = value.reshape(self.num_frames_per_proc, self.num_procs)
         # last observations per episode
         preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
@@ -270,8 +228,44 @@ class AttentionAlgo(BaseAlgo):
         exps.returnn = exps.value + exps.advantage
         # normalize the advantage
         exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
+        # Log some values
+
+        keep = max(self.log_done_counter, self.num_procs)
+
+        logs = {
+            "return_per_episode": self.log_return[-keep:],
+            "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
+            "num_frames_per_episode": self.log_num_frames[-keep:],
+            "num_frames": self.num_frames
+        }
+
+        self.log_done_counter = 0
+        self.log_return = self.log_return[-self.num_procs:]
+        self.log_reshaped_return = self.log_reshaped_return[-self.num_procs:]
+        self.log_num_frames = self.log_num_frames[-self.num_procs:]
+
+        return obss_mat, exps, logs
+
+    @abstractmethod
+    def update_parameters(self):
+        pass
 
 
+class AttentionAlgo(BaseAlgo):
+    """The Advantage Actor-Critic algorithm."""
+
+    def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
+                 entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
+                 rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None, reshape_reward=None):
+        num_frames_per_proc = num_frames_per_proc or 8
+
+        super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
+                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward)
+
+        self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
+                                             alpha=rmsprop_alpha, eps=rmsprop_eps)
+
+    def update_parameters(self, obss, exps):
         # ===== Calculate losses =====
 
         dist, value = self.acmodel(obss)
