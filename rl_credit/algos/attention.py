@@ -220,7 +220,7 @@ class BaseAlgo(ABC):
 
         # Calculate values using whole context from episode
         with torch.no_grad():
-            _, value = self.acmodel(obss_mat, mask_future=True, attn_custom_mask=attn_mask)
+            _, value, scores = self.acmodel(obss_mat, mask_future=True, attn_custom_mask=attn_mask)
 
         self.values = value.reshape(self.num_frames_per_proc, self.num_procs)
         # last observations per episode
@@ -282,10 +282,14 @@ class AttentionAlgo(BaseAlgo):
         self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
 
+        self._update_number = 0  # convenience, for debugging, occasional saves
+
     def update_parameters(self, obss, exps):
+        self._update_number += 1
+
         # ===== Calculate losses =====
 
-        dist, value = self.acmodel(obss)
+        dist, value, scores = self.acmodel(obss)
 
         entropy = dist.entropy().mean()
 
@@ -305,10 +309,22 @@ class AttentionAlgo(BaseAlgo):
 
         # Log some values
 
+        if self._update_number % 50 == 0:
+            # plot scores of the first and last batch
+            for i in [0, self.num_procs - 1]:
+                import wandb
+                wandb.log({
+                    'attn_scores': wandb.plots.HeatMap(
+                        x_labels=range(self.num_frames_per_proc),
+                        y_labels=range(self.num_frames_per_proc),
+                        matrix_values=scores[i].detach(),
+                        show_text=False)
+                })
+
         with torch.no_grad():
             # evaluate KL divergence b/w old and new policy
             # policy under newly updated model
-            dist, _ = self.acmodel(obss)
+            dist, _, _ = self.acmodel(obss)
 
             approx_kl = (exps.log_prob - dist.log_prob(exps.action)).mean().item()
             adv_mean = exps.advantage.mean().item()

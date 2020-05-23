@@ -402,10 +402,10 @@ class A2CAttention(nn.Module, BaseModel):
         dist = Categorical(logits=F.log_softmax(x, dim=1))
 
         if ep_len == 1:
-            # forward pass is just a single step in to figure out action to take
+            # forward pass is just a single step to figure out action to take
             # in env, so skip value evaluation
-            # TODO: allow value prediction for single obs / use context vector
-            # use 0 as placeholder temporary
+            # TODO: allow value prediction for single obs / use context vector.
+            # Temporary: use 0 as placeholder.
             return dist, torch.tensor([0.])
 
         # ==== attention before critic ====
@@ -430,4 +430,4 @@ class A2CAttention(nn.Module, BaseModel):
         x = self.critic(attn_out.view(batch_size * ep_len, self.d_key))
         value = x.squeeze(1)
 
-        return dist, value
+        return dist, value, scores
