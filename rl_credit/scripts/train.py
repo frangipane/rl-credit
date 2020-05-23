@@ -116,6 +116,7 @@ if args.wandb is not None:
         print('To log run to wandb, please install wandb, e.g.: pip install wandb')
         sys.exit(-1)
 
+wandb_dir = wandb.run.dir if args.wandb is not None else None
 
 # Set seed for all randomness sources
 
@@ -190,7 +191,7 @@ elif args.algo == "attention":
     
     algo = rl_credit.AttentionAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                    args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                                   args.optim_alpha, args.optim_eps, preprocess_obss)
+                                   args.optim_alpha, args.optim_eps, preprocess_obss, wandb_dir=wandb_dir)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
