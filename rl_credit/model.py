@@ -317,7 +317,7 @@ class ACModelStateHCA(ACModelVanilla):
         return dist, value
 
 
-class A2CAttention(nn.Module, BaseModel):
+class ACAttention(nn.Module, BaseModel):
     def __init__(self, obs_space, action_space, d_key=5):
         """
         d_key : int, dimension of image embedding projected

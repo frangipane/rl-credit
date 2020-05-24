@@ -1,7 +1,7 @@
 import torch
 
 import rl_credit.script_utils as utils
-from rl_credit.model import ACModel, ACModelReturnHCA, ACModelStateHCA, A2CAttention
+from rl_credit.model import ACModel, ACModelReturnHCA, ACModelStateHCA, ACAttention
 
 
 class Agent:
@@ -24,7 +24,7 @@ class Agent:
         elif hca_state:
             self.acmodel = ACModelStateHCA(obs_space, action_space)
         elif attention:
-            self.acmodel = A2CAttention(obs_space, action_space, d_key)
+            self.acmodel = ACAttention(obs_space, action_space, d_key)
         else:
             self.acmodel = ACModel(obs_space, action_space, use_memory=use_memory, use_text=use_text)
         self.device = device
