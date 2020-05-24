@@ -8,7 +8,7 @@ import rl_credit.script_utils as utils
 import numpy as np
 import torch.nn.functional as F
 
-from rl_credit.model import A2CAttention
+from rl_credit.model import ACAttention
 
 
 class BaseAlgo(ABC):
@@ -272,7 +272,7 @@ class BaseAlgo(ABC):
 
 
 class AttentionAlgo(BaseAlgo):
-    """The Advantage Actor-Critic algorithm."""
+    """The Advantage Actor-Critic algorithm with attention used in the Critic."""
 
     def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
@@ -337,12 +337,12 @@ class AttentionAlgo(BaseAlgo):
             # labels_fig.savefig(labels_fig_base, fmt='png')
             # plt.clf()
 
-            # mask_fig = (sns.heatmap(self.attn_mask[0].detach().numpy(), xticklabels=10, yticklabels=10)
-            #             .get_figure())
-            # mask_fig_base = str(os.path.join(self.wandb_dir,
-            #                                  f'mask_{self._update_number:04}'))
-            # mask_fig.savefig(mask_fig_base, fmt='png')
-            # plt.clf()
+            mask_fig = (sns.heatmap(self.attn_mask[0].detach().numpy(), xticklabels=10, yticklabels=10)
+                        .get_figure())
+            mask_fig_base = str(os.path.join(self.wandb_dir,
+                                             f'mask_{self._update_number:04}'))
+            mask_fig.savefig(mask_fig_base, fmt='png')
+            plt.clf()
 
         with torch.no_grad():
             # evaluate KL divergence b/w old and new policy
@@ -416,7 +416,7 @@ if __name__ == '__main__':
         envs.append(utils.make_env('MiniGrid-KeyGoal-6x6-v0', seed + 10000 * i))
 
     obs_space, preprocess_obss = get_obss_preprocessor(envs[0].observation_space)
-    acmodel = A2CAttention(obs_space, envs[0].action_space,)
+    acmodel = ACAttention(obs_space, envs[0].action_space,)
 
     algo_args=dict(device=device,
                    num_frames_per_proc=128,

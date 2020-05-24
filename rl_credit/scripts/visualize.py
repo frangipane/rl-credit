@@ -34,7 +34,7 @@ parser.add_argument("--hcareturns", action="store_true", default=False,
 parser.add_argument("--hcastate", action="store_true", default=False,
                     help="use HCA state model")
 parser.add_argument("--attention", action="store_true", default=False,
-                    help="use A2CAttention model")
+                    help="use ACAttention model")
 parser.add_argument("--d-key", type=int, default=5,
                     help="rank of attention matrix (default: 5)")
 

@@ -8,7 +8,7 @@ import sys
 import numpy as np
 
 import script_utils as utils
-from model import ACModel, ACModelVanilla, ACModelReturnHCA, ACModelStateHCA, A2CAttention
+from model import ACModel, ACModelVanilla, ACModelReturnHCA, ACModelStateHCA, ACAttention
 
 
 # Parse arguments
@@ -160,7 +160,7 @@ if args.algo == "hca_returns":
 elif args.algo == "hca_state":
     acmodel = ACModelStateHCA(obs_space, envs[0].action_space)
 elif args.algo == "attention":
-    acmodel = A2CAttention(obs_space, envs[0].action_space, d_key=args.d_key)
+    acmodel = ACAttention(obs_space, envs[0].action_space, d_key=args.d_key)
 else:
     acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
 if "model_state" in status:
