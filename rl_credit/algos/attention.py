@@ -295,7 +295,7 @@ class AttentionAlgo(BaseAlgo):
 
         # ===== Calculate losses =====
 
-        dist, value, scores = self.acmodel(obss)
+        dist, value, scores = self.acmodel(obss, mask_future=True, attn_custom_mask=self.attn_mask)
 
         entropy = dist.entropy().mean()
 
