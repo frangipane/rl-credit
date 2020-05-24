@@ -5,7 +5,7 @@ from rl_credit.format import default_preprocess_obss
 from rl_credit.utils import DictList, ParallelEnv
 import rl_credit.script_utils as utils
 
-import numpy
+import numpy as np
 import torch.nn.functional as F
 
 from rl_credit.model import A2CAttention
@@ -89,6 +89,8 @@ class BaseAlgo(ABC):
         self.obss = [None]*(shape[0])
         self.mask = torch.ones(shape[1], device=self.device)
         self.masks = torch.zeros(*shape, device=self.device)
+        self.seq_labels = torch.zeros(*shape, device=self.device)
+        self.seq_label_delta = torch.zeros(shape[1], device=self.device)
         self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
         self.values = torch.zeros(*shape, device=self.device)
         self.rewards = torch.zeros(*shape, device=self.device)
@@ -146,6 +148,11 @@ class BaseAlgo(ABC):
             self.obs = obs
             self.masks[i] = self.mask
             self.mask = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
+
+            self.seq_label_delta = (1 - self.masks[i-1]) if i > 0 else 0
+            self.seq_labels[i] = self.seq_labels[i-1] + self.seq_label_delta if i > 0 \
+                                 else self.seq_labels[i]
+
             self.actions[i] = action
             if self.reshape_reward is not None:
                 self.rewards[i] = torch.tensor([
@@ -201,9 +208,22 @@ class BaseAlgo(ABC):
 
         # ===== Add advantage and return to experiences =====
 
+        # Create block diagonal mask for observations from different
+        # episodes don't pay attention to each other
+        # T x P -> P x T -> P x 1 x T -> P x T x T
+        seq_labels = (self.seq_labels
+                      .transpose(0, 1)
+                      .unsqueeze(1)
+                      .expand(-1, self.num_frames_per_proc, -1))
+        # mask picks out elements outside the block diagonal to be masked out
+        self.attn_mask = (seq_labels - seq_labels.transpose(2, 1)) != 0
+
+        # Save as attribute only for debugging/plotting
+        self.seq_labels_debug = seq_labels
+
         # Calculate values using whole context from episode
         with torch.no_grad():
-            _, value = self.acmodel(obss_mat)
+            _, value, scores = self.acmodel(obss_mat, mask_future=True, attn_custom_mask=self.attn_mask)
 
         self.values = value.reshape(self.num_frames_per_proc, self.num_procs)
         # last observations per episode
@@ -256,7 +276,8 @@ class AttentionAlgo(BaseAlgo):
 
     def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
-                 rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None, reshape_reward=None):
+                 rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None, reshape_reward=None,
+                 wandb_dir=None):
         num_frames_per_proc = num_frames_per_proc or 8
 
         super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
@@ -265,10 +286,16 @@ class AttentionAlgo(BaseAlgo):
         self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
 
+        self._update_number = 0  # convenience, for debugging, occasional saves
+        self.wandb_dir = wandb_dir
+
     def update_parameters(self, obss, exps):
+        self._update_number += 1
+        logs = {}
+
         # ===== Calculate losses =====
 
-        dist, value = self.acmodel(obss)
+        dist, value, scores = self.acmodel(obss, mask_future=True, attn_custom_mask=self.attn_mask)
 
         entropy = dist.entropy().mean()
 
@@ -288,10 +315,39 @@ class AttentionAlgo(BaseAlgo):
 
         # Log some values
 
+        # Save attention scores heatmap every 100 updates
+        if self.wandb_dir is not None and self._update_number % 100 == 0:
+            import os
+            import wandb
+            import seaborn as sns
+            import matplotlib.pyplot as plt
+            attn_fig = (sns.heatmap(scores[0].detach().numpy(), xticklabels=10, yticklabels=10)
+                        .get_figure())
+            img_name_base = str(os.path.join(self.wandb_dir,
+                                             f'attn_scores_{self._update_number:04}'))
+            attn_fig.savefig(img_name_base, fmt='png')
+            wandb.save(img_name_base + '*')
+            plt.clf()
+
+            # # For debugging
+            # labels_fig = (sns.heatmap(self.seq_labels_debug[0].detach().numpy(), xticklabels=10, yticklabels=10)
+            #               .get_figure())
+            # labels_fig_base = str(os.path.join(self.wandb_dir,
+            #                                    f'episode_labels_{self._update_number:04}'))
+            # labels_fig.savefig(labels_fig_base, fmt='png')
+            # plt.clf()
+
+            # mask_fig = (sns.heatmap(self.attn_mask[0].detach().numpy(), xticklabels=10, yticklabels=10)
+            #             .get_figure())
+            # mask_fig_base = str(os.path.join(self.wandb_dir,
+            #                                  f'mask_{self._update_number:04}'))
+            # mask_fig.savefig(mask_fig_base, fmt='png')
+            # plt.clf()
+
         with torch.no_grad():
             # evaluate KL divergence b/w old and new policy
             # policy under newly updated model
-            dist, _ = self.acmodel(obss)
+            dist, _, _ = self.acmodel(obss)
 
             approx_kl = (exps.log_prob - dist.log_prob(exps.action)).mean().item()
             adv_mean = exps.advantage.mean().item()
@@ -302,7 +358,7 @@ class AttentionAlgo(BaseAlgo):
             # standard deviation of values
             value_std = value.std().item()
 
-        logs = {
+        logs.update({
             "entropy": entropy.item(),
             "value": value.mean().item(),
             "value_std": value_std,
@@ -314,7 +370,7 @@ class AttentionAlgo(BaseAlgo):
             "adv_mean": adv_mean,
             "adv_std": adv_std,
             "kl": approx_kl,
-        }
+        })
         return logs
 
     def _get_starting_indexes(self):
@@ -331,7 +387,7 @@ class AttentionAlgo(BaseAlgo):
             the indexes of the experiences to be used at first
         """
 
-        starting_indexes = numpy.arange(0, self.num_frames, self.recurrence)
+        starting_indexes = np.arange(0, self.num_frames, self.recurrence)
         return starting_indexes
 
 
@@ -342,7 +398,7 @@ def get_obss_preprocessor(obs_space):
         obs_space = obs_space.spaces["image"].shape
 
         def preprocess_obss(obss, device=None):
-            images = numpy.array([obs["image"] for obs in obss])
+            images = np.array([obs["image"] for obs in obss])
             return torch.tensor(images, device=device, dtype=torch.float)
     else:
         raise ValueError("Unknown observation space: " + str(obs_space))
