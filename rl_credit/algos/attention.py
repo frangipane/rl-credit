@@ -141,30 +141,29 @@ class BaseAlgo(ABC):
                 dist, _ = self.acmodel(preprocessed_obs)
             action = dist.sample()
 
-            obs, reward, done, _ = self.env.step(action.cpu().numpy())
-            # Update experiences values
+            next_obs, reward, done, _ = self.env.step(action.cpu().numpy())
 
+            # Update experiences values
             self.obss[i] = self.obs
-            self.obs = obs
+            self.actions[i] = action
             self.masks[i] = self.mask
             self.mask = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
-
+            self.log_probs[i] = dist.log_prob(action)
             self.seq_label_delta = (1 - self.masks[i-1]) if i > 0 else 0
             self.seq_labels[i] = self.seq_labels[i-1] + self.seq_label_delta if i > 0 \
                                  else self.seq_labels[i]
-
-            self.actions[i] = action
             if self.reshape_reward is not None:
                 self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
-                    for obs_, action_, reward_, done_ in zip(obs, action, reward, done)
+                    for obs_, action_, reward_, done_ in zip(next_obs, action, reward, done)
                 ], device=self.device)
             else:
                 self.rewards[i] = torch.tensor(reward, device=self.device)
-            self.log_probs[i] = dist.log_prob(action)
+
+            # update obs
+            self.obs = next_obs
 
             # Update log values
-
             self.log_episode_return += torch.tensor(reward, device=self.device, dtype=torch.float)
             self.log_episode_reshaped_return += self.rewards[i]
             self.log_episode_num_frames += torch.ones(self.num_procs, device=self.device)
@@ -180,6 +179,17 @@ class BaseAlgo(ABC):
             self.log_episode_reshaped_return *= self.mask
             self.log_episode_num_frames *= self.mask
 
+        # Reshape obss into tensor of size (batch size=num_procs, seq len=frames per proc, *(image_dim))
+        obss_mat = [None]*(self.num_procs)
+        for i in range(self.num_procs):
+            obss_mat[i] = self.preprocess_obss([self.obss[j][i] for j in range(self.num_frames_per_proc)])
+        obss_mat = torch.cat(obss_mat).view(self.num_procs, *obss_mat[0].shape)
+
+        # Create additional obs mat including last obs for bootstrapping of size
+        # (batch size=num_procs, seq len=frames per proc + 1, *(image_dim))
+        next_obs = self.preprocess_obss(self.obs, device=self.device)
+        next_obss_mat = torch.cat((obss_mat, next_obs.unsqueeze(1)), 1)
+
         # Define experiences:
         #   the whole experience is the concatenation of the experience
         #   of each process.
@@ -187,14 +197,6 @@ class BaseAlgo(ABC):
         #   - T is self.num_frames_per_proc,
         #   - P is self.num_procs,
         #   - D is the dimensionality.
-
-        # Reshape obss into tensor of (batch size=num_procs, seq len=frames per proc, *(image_dim))
-        obss_mat = [None]*(self.num_procs)
-        for i in range(self.num_procs):
-            obss_mat[i] = self.preprocess_obss([self.obss[j][i]
-                                                for j in range(self.num_frames_per_proc)])
-        obss_mat = torch.cat(obss_mat).view(self.num_procs, *obss_mat[0].shape)
-        
         exps = DictList()
         # exps.obs = [self.obss[i][j]
         #             for j in range(self.num_procs)
@@ -209,31 +211,36 @@ class BaseAlgo(ABC):
         # ===== Add advantage and return to experiences =====
 
         # Create block diagonal mask for observations from different
-        # episodes don't pay attention to each other
-        # T x P -> P x T -> P x 1 x T -> P x T x T
-        seq_labels = (self.seq_labels
+        # episodes don't pay attention to each other.
+        # T+1 x P -> P x T+1 -> P x 1 x T+1 -> P x T+1 x T+1
+        next_seq_label_delta = 1 - self.mask
+        next_seq_label = self.seq_labels[-1] + next_seq_label_delta
+
+        seq_labels = (torch.cat((self.seq_labels, next_seq_label.unsqueeze(0)), 0)
                       .transpose(0, 1)
                       .unsqueeze(1)
-                      .expand(-1, self.num_frames_per_proc, -1))
+                      .expand(-1, self.num_frames_per_proc + 1, -1))
         # mask picks out elements outside the block diagonal to be masked out
         self.attn_mask = (seq_labels - seq_labels.transpose(2, 1)) != 0
 
-        # Save as attribute only for debugging/plotting
-        self.seq_labels_debug = seq_labels
-
         # Calculate values using whole context from episode
         with torch.no_grad():
-            _, value, scores = self.acmodel(obss_mat, mask_future=True, attn_custom_mask=self.attn_mask)
+            _, value, _ = self.acmodel(next_obss_mat, mask_future=True, attn_custom_mask=self.attn_mask)
 
-        self.values = value.reshape(self.num_frames_per_proc, self.num_procs)
-        # last observations per episode
-        preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
-        preprocessed_obs = torch.unsqueeze(preprocessed_obs, dim=1)
-
-        # bootstrapped final value for unfinished trajectories cut off by end
+        # for bootstrapping final value for unfinished trajectories cut off by end
         # of epoch (=num frames per proc)
-        with torch.no_grad():
-            _, next_value = self.acmodel(preprocessed_obs)
+        next_value = value.view(self.num_frames_per_proc + 1, self.num_procs)[-1]
+
+        # drop value and masking corresponding to last obs
+        self.values = value.view(self.num_frames_per_proc + 1, self.num_procs)[:-1, :]
+        self.attn_mask = self.attn_mask[:, :-1, :-1]
+        self.seq_labels_debug = seq_labels[:, :-1, :-1]  # only for debugging use
+
+        # Bootstrap alternative 2: set last values to 0
+        # next_value = torch.zeros(self.num_frames_per_proc, device=self.device)
+
+        # Bootstrap alternative 3: approximate as value of the last obs
+        # next_value = self.values[-1, :]
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask = self.masks[i+1] if i < self.num_frames_per_proc - 1 else self.mask
