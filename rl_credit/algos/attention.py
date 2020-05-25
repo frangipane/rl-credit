@@ -53,6 +53,7 @@ class BaseAlgo(ABC):
         # Store parameters
 
         self.env = ParallelEnv(envs)
+        self._action_space_n = envs[0].action_space.n
         self.acmodel = acmodel
         self.device = device
         self.num_frames_per_proc = num_frames_per_proc
