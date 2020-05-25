@@ -431,3 +431,148 @@ class ACAttention(nn.Module, BaseModel):
         value = x.squeeze(1)
 
         return dist, value, scores
+
+
+class AttentionQ(nn.Module, BaseModel):
+    """
+    Actor critic with additional Qvalue attention head
+    """
+    def __init__(self, obs_space, action_space, d_key=5):
+        """
+        d_key : int, dimension of image embedding projected
+           to query (and key) for attention
+        """
+        super().__init__()
+        self._action_space_n = action_space.n
+
+        # Define image embedding
+        self.image_conv = nn.Sequential(
+            nn.Conv2d(3, 16, (2, 2)),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),
+            nn.Conv2d(16, 32, (2, 2)),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, (2, 2)),
+            nn.ReLU()
+        )
+        n = obs_space[0]
+        m = obs_space[1]
+        self.image_embedding_size = ((n-1)//2-2)*((m-1)//2-2)*64
+
+        # Define actor's model
+        self.actor = nn.Sequential(
+            nn.Linear(self.image_embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, self._action_space_n)
+        )
+
+        # Define critic's model
+        self.critic = nn.Sequential(
+            nn.Linear(self.image_embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+
+        # Define action embedding
+        self._action_embed_size = 32
+        self.action_embed = nn.Linear(self._action_space_n, self._action_embed_size)
+
+        # Define self-attention vector for input into Qvalue head
+        self.d_key = d_key
+        self.Wq = nn.Linear(self.image_embedding_size + self._action_embed_size, d_key, bias=False)
+        self.Wk = nn.Linear(self.image_embedding_size + self._action_embed_size, d_key, bias=False)
+        self.Wv = nn.Linear(self.image_embedding_size + self._action_embed_size, d_key, bias=False)
+
+        self.Qvalue = nn.Sequential(
+            nn.Linear(self.d_key, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+
+        # Initialize parameters correctly
+        self.apply(init_params)
+
+    def forward(self, obs, actions=None, mask_future=True, attn_custom_mask=None):
+        """
+        obs : torch.tensor, dtype=float,
+            of size (batch_size, ep_len, image_H, image_W, image_C)
+
+        actions : torch.tensor, dtype=float,
+            of size (batch_size, ep_len, self._action_space_n)
+
+        mask_future : bool,
+            If True, apply mask so observations cannot attend to future obs, only
+            previous obs.
+
+        attn_custom_mask : torch.tensor, dtype=bool,
+            mask for attention scores of dimension (batch_size, ep_len, ep_len), where
+            elements that are True are to be zeroed out.
+
+            Expected use case: mask elements outside block-diagonal so that observations
+            that are in different episodes cannot attend to each other.
+        """
+        # expect obs to be dim 5, but for compatibility with other scripts
+        # that don't have an extra dimension for sequence length, add
+        # an extra dimension if obs dim is 4
+        if obs.dim() == 4:
+            obs = obs.unsqueeze(1)
+
+        batch_size, ep_len, h, w, c = obs.shape
+
+        # Reshape obs for input into actor and critic
+        if ep_len == 1:
+            obs = torch.squeeze(obs, dim=1)
+        elif ep_len > 1:
+            obs = obs.reshape(batch_size * ep_len, h, w, c)
+
+        x = obs.transpose(1, 3).transpose(2, 3)
+        x = self.image_conv(x)
+        x = x.reshape(x.shape[0], -1)
+
+        img_embedding = x  # dim 2: (batch_size * ep_len, img embedding size)
+
+        # policy
+        x = self.actor(img_embedding)
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+
+        x = self.critic(img_embedding)
+        value = x.squeeze(1)
+
+        if ep_len == 1 or actions is None:
+            # forward pass is just a single step to figure out action to take
+            # in env, so skip Qvalue evaluation
+            return dist, value
+
+        # ===== embed one-hot encoded actions =====
+        if actions is not None:
+            assert actions.dim() == 3
+            assert actions.shape[0] == batch_size
+            assert actions.shape[1] == ep_len
+
+        action_embedding = self.action_embed(actions.reshape(batch_size * ep_len, self._action_space_n))
+
+        # ==== attention before Qvalue ====
+        x = torch.cat((img_embedding, action_embedding), 1)
+
+        queries = self.Wq(x).view(batch_size, ep_len, self.d_key) / (self.d_key ** (1/4))
+        keys = self.Wk(x).view(batch_size, ep_len, self.d_key) / (self.d_key ** (1/4))
+        values = self.Wv(x).view(batch_size, ep_len, self.d_key)
+
+        scores = torch.bmm(queries, keys.transpose(1, 2))
+
+        # Custom mask
+        if attn_custom_mask is not None:
+            scores.masked_fill_(attn_custom_mask, float('-inf'))
+
+        # Filter out self attention to future values
+        if mask_future is True:
+            scores_mask = torch.ones([ep_len, ep_len]).tril()
+            scores.masked_fill_(scores_mask == 0, float('-inf'))
+
+        scores = F.softmax(scores, dim=2)    # shape = (batch_size, ep_len, ep_len)
+        attn_out = torch.bmm(scores, values)  # shape = (batch_size, ep_len, d_key)
+
+        x = self.Qvalue(attn_out.view(batch_size * ep_len, self.d_key))
+        qvalue = x.squeeze(1)
+
+        return dist, value, qvalue, scores
