@@ -44,12 +44,14 @@ def init_params(m):
 
 
 class ACModel(nn.Module, RecurrentACModel):
-    def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
+    def __init__(self, obs_space, action_space, use_memory=False, use_text=False,
+                 return_embedding=False):
         super().__init__()
 
         # Decide which components are enabled
         self.use_text = use_text
         self.use_memory = use_memory
+        self.return_embedding = return_embedding
 
         # Define image embedding
         self.image_conv = nn.Sequential(
@@ -129,7 +131,13 @@ class ACModel(nn.Module, RecurrentACModel):
         x = self.critic(embedding)
         value = x.squeeze(1)
 
-        return dist, value, memory
+        if self.return_embedding:
+            # if no memory, embedding is the img embedding, otherwise
+            # it's the hidden state of the LSTM, also (redundantly) stored
+            # in memory.
+            return dist, value, memory, embedding
+        else:
+            return dist, value, memory
 
     def _get_embed_text(self, text):
         _, hidden = self.text_rnn(self.word_embedding(text))
