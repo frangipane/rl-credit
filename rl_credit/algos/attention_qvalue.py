@@ -1,11 +1,14 @@
+import os
 from abc import ABC, abstractmethod
+
+import numpy as np
+import matplotlib.pyplot as plt
+
 import torch
+import torch.nn.functional as F
 
 from rl_credit.utils import DictList, ParallelEnv
 import rl_credit.script_utils as utils
-
-import numpy as np
-import torch.nn.functional as F
 
 from rl_credit.algos.attention import BaseAlgo, get_obss_preprocessor
 from rl_credit.model import AttentionQ
@@ -49,13 +52,6 @@ class AttentionQAlgo(BaseAlgo):
             Useful stats about the training process, including the average
             reward, policy loss, value loss, etc.
         """
-        # Reinitialize b/w experience collection to get around pytorch bug complaining
-        # about tensor pointwise operations on expanded tensors.  After seq_labels expansion,
-        # fails on the 2nd call to collect_experiences because of
-        # (https://github.com/pytorch/pytorch/issues/10756)
-        self.seq_labels = torch.zeros((self.num_frames_per_proc, self.num_procs), device=self.device)
-        self.seq_label_delta = torch.zeros(self.num_procs, device=self.device)
-
         for i in range(self.num_frames_per_proc):
             # Do one agent-environment interaction
 
@@ -156,7 +152,6 @@ class AttentionQAlgo(BaseAlgo):
         obss_mat = torch.cat(obss_mat).view(self.num_procs, *obss_mat[0].shape)
 
         # Reshape actions -> tensor size (num_procs, frames_per_proc, action_space.n)
-        #import pdb; pdb.set_trace()
         self.actions_mat = (torch.nn.functional.one_hot(self.actions.long())
                             .transpose(0, 1).float())
 
@@ -171,7 +166,7 @@ class AttentionQAlgo(BaseAlgo):
         self.attn_mask = (seq_labels - seq_labels.transpose(2, 1)) != 0
 
         # just for debugging
-        self.seq_labels = seq_labels
+        self.seq_labels_debug = seq_labels
 
         # Log some values
 
@@ -225,12 +220,11 @@ class AttentionQAlgo(BaseAlgo):
 
         # Save attention scores heatmap every 100 updates
         if self.wandb_dir is not None and self._update_number % 100 == 0:
-            import os
             import wandb
             import seaborn as sns
-            import matplotlib.pyplot as plt
-            attn_fig = (sns.heatmap(scores[0].detach().numpy(), xticklabels=10, yticklabels=10)
-                        .get_figure())
+
+            scores0 = scores[0].detach()
+            attn_fig = sns.heatmap(scores0.numpy(), xticklabels=10, yticklabels=10).get_figure()
             img_name_base = str(os.path.join(self.wandb_dir,
                                              f'attn_scores_{self._update_number:04}'))
             attn_fig.savefig(img_name_base, fmt='png')
@@ -251,6 +245,10 @@ class AttentionQAlgo(BaseAlgo):
                                              f'mask_{self._update_number:04}'))
             mask_fig.savefig(mask_fig_base, fmt='png')
             plt.clf()
+
+            self.calculate_and_save_top_attended(scores0, obss[0].detach().numpy(),
+                                                 self.actions.detach()[:, 0].squeeze(),
+                                                 out_dir=self.wandb_dir)
 
         with torch.no_grad():
             # evaluate KL divergence b/w old and new policy
@@ -286,6 +284,63 @@ class AttentionQAlgo(BaseAlgo):
             "kl": approx_kl,
         })
         return logs
+
+    def calculate_and_save_top_attended(self, scores, obs, actions, k=5, out_dir=None):
+        """
+        Plot the k-top attended observations as measured by summing attention scores
+        across all frames.
+
+        Also plot histogram of importance scores.
+
+        scores : torch tensor (frames_per_proc, frames_per_proc)
+        obs : torch tensor (frames_per_proc, *(image-size))
+        actions : torch tensor (frames_per_proc)
+        k : int, number of top most attended images to save
+        """
+        importance = torch.sum(scores, dim=0).squeeze(0)
+        print('max importance', importance.max())
+
+        _, indices = torch.sort(importance, descending=True)
+        indices = indices[:k]
+        map_actions = {0: 'left',
+                       1: 'right',
+                       2:'forward',
+                       3: 'pickup',
+                       4: 'drop',
+                       5: 'toggle',
+                       6: 'done'}
+
+        fig = plt.hist(importance.numpy(), bins=30)
+        plt.title('Importance from summed attention scores')
+        plt.xlabel('Importance')
+        plt.ylabel('Counts')
+        plt.savefig(os.path.join(out_dir, f'update{self._update_number:04}_importance.png'))
+        plt.clf()
+
+        for idx in indices:
+            img = self._get_obs_render(obs[idx])
+            act = map_actions[actions[idx].item()]
+            rnd_score = str(importance[idx].numpy().round(1))
+            fname = f"update{self._update_number:04}__fr{idx:03}__score{rnd_score}__{act}.png"
+            plt.imsave(os.path.join(out_dir, fname), img)
+            plt.clf()
+
+    def _get_obs_render(self, obs, tile_size=16):
+        """
+        Render an agent observation for visualization
+        """
+        from gym_minigrid.minigrid import Grid
+        agent_view_size = obs.shape[0]
+        grid, vis_mask = Grid.decode(obs)
+
+        # Render the whole grid
+        img = grid.render(
+            tile_size,
+            agent_pos=(agent_view_size // 2, agent_view_size - 1),
+            agent_dir=3,
+            highlight_mask=vis_mask
+        )
+        return img
 
 
 if __name__ == '__main__':
