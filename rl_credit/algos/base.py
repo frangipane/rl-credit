@@ -4,6 +4,7 @@ import torch
 from rl_credit.format import default_preprocess_obss
 from rl_credit.utils import DictList, ParallelEnv
 
+
 class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
@@ -90,6 +91,11 @@ class BaseAlgo(ABC):
         self.rewards = torch.zeros(*shape, device=self.device)
         self.advantages = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
+
+        # For attention only
+        self.seq_labels = torch.zeros(*shape, device=self.device)
+        self.seq_label_delta = torch.zeros(shape[1], device=self.device)
+
 
         # Initialize log values
 

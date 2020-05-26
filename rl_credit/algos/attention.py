@@ -1,6 +1,10 @@
+"""
+A2C with an attention layer in the critic
+"""
 from abc import ABC, abstractmethod
 import torch
 
+from rl_credit.algos.base import BaseAlgo
 from rl_credit.format import default_preprocess_obss
 from rl_credit.utils import DictList, ParallelEnv
 import rl_credit.script_utils as utils
@@ -11,103 +15,23 @@ import torch.nn.functional as F
 from rl_credit.model import ACAttention
 
 
-class BaseAlgo(ABC):
-    """The base class for RL algorithms."""
+class AttentionAlgo(BaseAlgo):
+    """The Advantage Actor-Critic algorithm with attention used in the Critic."""
 
-    def __init__(self, envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward):
-        """
-        Initializes a `BaseAlgo` instance.
+    def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
+                 entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
+                 rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None, reshape_reward=None,
+                 wandb_dir=None):
+        num_frames_per_proc = num_frames_per_proc or 8
 
-        Parameters:
-        ----------
-        envs : list
-            a list of environments that will be run in parallel
-        acmodel : torch.Module
-            the model
-        num_frames_per_proc : int
-            the number of frames collected by every process for an update
-        discount : float
-            the discount for future rewards
-        lr : float
-            the learning rate for optimizers
-        gae_lambda : float
-            the lambda coefficient in the GAE formula
-            ([Schulman et al., 2015](https://arxiv.org/abs/1506.02438))
-        entropy_coef : float
-            the weight of the entropy cost in the final objective
-        value_loss_coef : float
-            the weight of the value loss in the final objective
-        max_grad_norm : float
-            gradient will be clipped to be at most this value
-        recurrence : int
-            the number of steps the gradient is propagated back in time
-        preprocess_obss : function
-            a function that takes observations returned by the environment
-            and converts them into the format that the model can handle
-        reshape_reward : function
-            a function that shapes the reward, takes an
-            (observation, action, reward, done) tuple as an input
-        """
+        super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
+                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward)
 
-        # Store parameters
+        self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
+                                             alpha=rmsprop_alpha, eps=rmsprop_eps)
 
-        self.env = ParallelEnv(envs)
-        self._action_space_n = envs[0].action_space.n
-        self.acmodel = acmodel
-        self.device = device
-        self.num_frames_per_proc = num_frames_per_proc
-        self.discount = discount
-        self.lr = lr
-        self.gae_lambda = gae_lambda
-        self.entropy_coef = entropy_coef
-        self.value_loss_coef = value_loss_coef
-        self.max_grad_norm = max_grad_norm
-        self.recurrence = recurrence
-        self.preprocess_obss = preprocess_obss or default_preprocess_obss
-        self.reshape_reward = reshape_reward
-
-        # Control parameters
-
-        assert self.acmodel.recurrent or self.recurrence == 1
-        assert self.num_frames_per_proc % self.recurrence == 0
-
-        # Configure acmodel
-
-        self.acmodel.to(self.device)
-        self.acmodel.train()
-
-        # Store helpers values
-
-        self.num_procs = len(envs)
-        self.num_frames = self.num_frames_per_proc * self.num_procs
-
-        # Initialize experience values
-
-        shape = (self.num_frames_per_proc, self.num_procs)
-
-        self.obs = self.env.reset()
-        self.obss = [None]*(shape[0])
-        self.mask = torch.ones(shape[1], device=self.device)
-        self.masks = torch.zeros(*shape, device=self.device)
-        self.seq_labels = torch.zeros(*shape, device=self.device)
-        self.seq_label_delta = torch.zeros(shape[1], device=self.device)
-        self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
-        self.values = torch.zeros(*shape, device=self.device)
-        self.rewards = torch.zeros(*shape, device=self.device)
-        self.advantages = torch.zeros(*shape, device=self.device)
-        self.log_probs = torch.zeros(*shape, device=self.device)
-
-        # Initialize log values
-
-        self.log_episode_return = torch.zeros(self.num_procs, device=self.device)
-        self.log_episode_reshaped_return = torch.zeros(self.num_procs, device=self.device)
-        self.log_episode_num_frames = torch.zeros(self.num_procs, device=self.device)
-
-        self.log_done_counter = 0
-        self.log_return = [0] * self.num_procs
-        self.log_reshaped_return = [0] * self.num_procs
-        self.log_num_frames = [0] * self.num_procs
+        self._update_number = 0  # convenience, for debugging, occasional saves
+        self.wandb_dir = wandb_dir
 
     def collect_experiences(self):
         """Collects rollouts and computes advantages.
@@ -273,29 +197,6 @@ class BaseAlgo(ABC):
         self.log_num_frames = self.log_num_frames[-self.num_procs:]
 
         return obss_mat, exps, logs
-
-    @abstractmethod
-    def update_parameters(self):
-        pass
-
-
-class AttentionAlgo(BaseAlgo):
-    """The Advantage Actor-Critic algorithm with attention used in the Critic."""
-
-    def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
-                 entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
-                 rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None, reshape_reward=None,
-                 wandb_dir=None):
-        num_frames_per_proc = num_frames_per_proc or 8
-
-        super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward)
-
-        self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
-                                             alpha=rmsprop_alpha, eps=rmsprop_eps)
-
-        self._update_number = 0  # convenience, for debugging, occasional saves
-        self.wandb_dir = wandb_dir
 
     def update_parameters(self, obss, exps):
         self._update_number += 1

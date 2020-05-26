@@ -1,3 +1,10 @@
+"""
+Uses AttentionQ model: A2C with a 3rd Qvalue head using an attention layer that takes
+image embedding and one hot encoded action as input.
+
+Qvalue loss is included in total loss, but Qvalues do not directly modify advantage calculated
+from the critic.
+"""
 import os
 from abc import ABC, abstractmethod
 
@@ -10,12 +17,13 @@ import torch.nn.functional as F
 from rl_credit.utils import DictList, ParallelEnv
 import rl_credit.script_utils as utils
 
-from rl_credit.algos.attention import BaseAlgo, get_obss_preprocessor
+from rl_credit.algos.base import BaseAlgo
+from rl_credit.algos.attention import get_obss_preprocessor
 from rl_credit.model import AttentionQ
 
 
 class AttentionQAlgo(BaseAlgo):
-    """The Advantage Actor-Critic algorithm with attention used in the Critic."""
+    """The Advantage Actor-Critic algorithm with a third attention Q value head"""
 
     def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
