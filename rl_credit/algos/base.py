@@ -206,8 +206,14 @@ class BaseAlgo(ABC):
         # bootstrapped final value for unfinished trajectories cut off by end
         # of epoch (=num frames per proc)
         with torch.no_grad():
-            if self.acmodel.recurrent:
-                _, next_value, _ = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+            if self.acmodel.recurrent and not self.store_embeddings:
+                _, next_value, _ = self.acmodel(
+                    preprocessed_obs, self.memory * self.mask.unsqueeze(1)
+                )
+            elif self.acmodel.recurrent and self.store_embeddings:
+                _, next_value, _, _ = self.acmodel(
+                    preprocessed_obs, self.memory * self.mask.unsqueeze(1)
+                )
             else:
                 _, next_value = self.acmodel(preprocessed_obs)
 
