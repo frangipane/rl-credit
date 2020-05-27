@@ -4,11 +4,13 @@ import torch
 from rl_credit.format import default_preprocess_obss
 from rl_credit.utils import DictList, ParallelEnv
 
+
 class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
     def __init__(self, envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward):
+                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward,
+                 store_embeddings=False):
         """
         Initializes a `BaseAlgo` instance.
 
@@ -41,6 +43,9 @@ class BaseAlgo(ABC):
         reshape_reward : function
             a function that shapes the reward, takes an
             (observation, action, reward, done) tuple as an input
+        store_embeddings : bool
+            if True, store image or hidden state embeddings while stepping
+            through the env
         """
 
         # Store parameters
@@ -68,11 +73,13 @@ class BaseAlgo(ABC):
 
         self.acmodel.to(self.device)
         self.acmodel.train()
+        self.acmodel.return_embedding = store_embeddings
 
         # Store helpers values
 
         self.num_procs = len(envs)
         self.num_frames = self.num_frames_per_proc * self.num_procs
+        self.store_embeddings = store_embeddings
 
         # Initialize experience values
 
@@ -90,6 +97,14 @@ class BaseAlgo(ABC):
         self.rewards = torch.zeros(*shape, device=self.device)
         self.advantages = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
+
+        # For attention only
+        self.seq_labels = torch.zeros(*shape, device=self.device)
+        self.seq_label_delta = torch.zeros(shape[1], device=self.device)
+
+        if self.store_embeddings:
+            # if not recurrent, store the image embeddings, otherwise the hidden states
+            self.embeddings = torch.zeros(*shape, self.acmodel.semi_memory_size, device=self.device)
 
         # Initialize log values
 
@@ -128,18 +143,22 @@ class BaseAlgo(ABC):
 
             preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
             with torch.no_grad():
-                if self.acmodel.recurrent:
-                    dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+                if self.acmodel.recurrent and not self.store_embeddings:
+                    dist, value, memory = self.acmodel(preprocessed_obs,
+                                                       self.memory * self.mask.unsqueeze(1))
+                elif self.acmodel.recurrent and self.store_embeddings:
+                    dist, value, memory, embedding = self.acmodel(preprocessed_obs,
+                                                                  self.memory * self.mask.unsqueeze(1))
                 else:
                     dist, value = self.acmodel(preprocessed_obs)
             action = dist.sample()
 
-            obs, reward, done, _ = self.env.step(action.cpu().numpy())
+            next_obs, reward, done, _ = self.env.step(action.cpu().numpy())
 
             # Update experiences values
 
             self.obss[i] = self.obs
-            self.obs = obs
+            self.obs = next_obs
             if self.acmodel.recurrent:
                 self.memories[i] = self.memory
                 self.memory = memory
@@ -150,12 +169,19 @@ class BaseAlgo(ABC):
             if self.reshape_reward is not None:
                 self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
-                    for obs_, action_, reward_, done_ in zip(obs, action, reward, done)
+                    for obs_, action_, reward_, done_ in zip(next_obs, action, reward, done)
                 ], device=self.device)
             else:
                 self.rewards[i] = torch.tensor(reward, device=self.device)
             self.log_probs[i] = dist.log_prob(action)
 
+            # collect seq labels to use for masking, for attention only
+            self.seq_label_delta = (1 - self.masks[i-1]) if i > 0 else 0
+            self.seq_labels[i] = self.seq_labels[i-1] + self.seq_label_delta if i > 0 \
+                                 else self.seq_labels[0]
+
+            if self.acmodel.recurrent and self.store_embeddings:
+                self.embeddings[i] = embedding
             # Update log values
 
             self.log_episode_return += torch.tensor(reward, device=self.device, dtype=torch.float)
@@ -173,15 +199,21 @@ class BaseAlgo(ABC):
             self.log_episode_reshaped_return *= self.mask
             self.log_episode_num_frames *= self.mask
 
-        # Add advantage and return to experiences
+        # ===== Add advantage and return to experiences =====
 
         preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
 
         # bootstrapped final value for unfinished trajectories cut off by end
         # of epoch (=num frames per proc)
         with torch.no_grad():
-            if self.acmodel.recurrent:
-                _, next_value, _ = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+            if self.acmodel.recurrent and not self.store_embeddings:
+                _, next_value, _ = self.acmodel(
+                    preprocessed_obs, self.memory * self.mask.unsqueeze(1)
+                )
+            elif self.acmodel.recurrent and self.store_embeddings:
+                _, next_value, _, _ = self.acmodel(
+                    preprocessed_obs, self.memory * self.mask.unsqueeze(1)
+                )
             else:
                 _, next_value = self.acmodel(preprocessed_obs)
 

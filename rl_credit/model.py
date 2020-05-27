@@ -44,12 +44,14 @@ def init_params(m):
 
 
 class ACModel(nn.Module, RecurrentACModel):
-    def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
+    def __init__(self, obs_space, action_space, use_memory=False, use_text=False,
+                 return_embedding=False):
         super().__init__()
 
         # Decide which components are enabled
         self.use_text = use_text
         self.use_memory = use_memory
+        self.return_embedding = return_embedding
 
         # Define image embedding
         self.image_conv = nn.Sequential(
@@ -129,7 +131,13 @@ class ACModel(nn.Module, RecurrentACModel):
         x = self.critic(embedding)
         value = x.squeeze(1)
 
-        return dist, value, memory
+        if self.return_embedding:
+            # if no memory, embedding is the img embedding, otherwise
+            # it's the hidden state of the LSTM, also (redundantly) stored
+            # in memory.
+            return dist, value, memory, embedding
+        else:
+            return dist, value, memory
 
     def _get_embed_text(self, text):
         _, hidden = self.text_rnn(self.word_embedding(text))
@@ -576,3 +584,81 @@ class AttentionQ(nn.Module, BaseModel):
         qvalue = x.squeeze(1)
 
         return dist, value, qvalue, scores
+
+
+class QAttentionModel(nn.Module):
+    """Calculate Q value given embedding input and action context vectors
+    using attention.
+
+    Creates context from concatenating embedding and action inputs.
+
+    embedding_size : int
+       size of the embedding (assumed to be a 1-D vector, not a raw RGB image)
+
+    action_size : int
+       cardinality of the action space
+
+    d_key : int
+        rank of attention matrix
+    """
+    def __init__(self, embedding_size, action_size, d_key=30):
+        super().__init__()
+
+        self.d_key = d_key
+
+        self._action_embed_size = 32
+        self.action_embed = nn.Linear(action_size, self._action_embed_size)
+
+        self.Wq = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+        self.Wk = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+        self.Wv = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+
+        self.Qvalue = nn.Sequential(
+            nn.Linear(d_key, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        )
+
+    def forward(self, obs, act, mask_future=True, custom_mask=None):
+        """
+        obs : tensor, of size
+            (batch_size, sequence_length, embedding_size)
+
+        act : tensor, of size
+            (batch_size, sequence_length, action_cardinality).  Actions
+            should be one-hot encoded
+
+        mask_future: bool
+            Filter out attention to future values?
+
+        custom_mask: (optional) torch.tensor, dtype bool, of size
+            (batch_size, sequence_length, sequence_length), intended for masking
+            between different episodes in the same batch.
+        """
+        batch_sz, seq_len, _ = obs.shape
+
+        action_embedding = self.action_embed(act.reshape(batch_sz * seq_len, -1))
+
+        x = torch.cat((obs.reshape(batch_sz * seq_len, -1), action_embedding), dim=1)
+
+        # batch_sz x seq_len x d_key
+        queries = self.Wq(x).view(batch_sz, seq_len, self.d_key) / (self.d_key ** (1/4))
+        keys = self.Wk(x).view(batch_sz, seq_len, self.d_key) / (self.d_key ** (1/4))
+        values = self.Wv(x).view(batch_sz, seq_len, self.d_key)
+
+        scores = torch.bmm(queries, keys.transpose(1, 2))
+
+        if custom_mask is not None:
+            scores.masked_fill_(custom_mask, float('-inf'))
+
+        if mask_future is True:
+            future_mask = torch.ones([seq_len, seq_len]).tril()
+            scores.masked_fill_(future_mask == 0, float('-inf'))
+
+        scores = torch.softmax(scores, dim=2)  # batch_sz x seq_len x seq_len
+        attn_out = torch.bmm(scores, values)   # batch_sz x seq_len x d_key
+
+        x = self.Qvalue(attn_out.view(batch_sz * seq_len, self.d_key))
+        qvalue = x.squeeze(1)
+
+        return qvalue, scores
