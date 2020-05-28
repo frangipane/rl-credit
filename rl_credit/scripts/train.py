@@ -237,6 +237,7 @@ while num_frames < args.frames:
         return_per_episode = utils.synthesize(logs["return_per_episode"])
         rreturn_per_episode = utils.synthesize(logs["reshaped_return_per_episode"])
         num_frames_per_episode = utils.synthesize(logs["num_frames_per_episode"])
+        last_reward_per_episode = utils.synthesize(logs["last_reward_per_episode"])
 
         header = ["update", "frames", "FPS", "duration"]
         data = [update, num_frames, fps, duration]
@@ -280,10 +281,12 @@ while num_frames < args.frames:
     if args.wandb is not None:
         logs['returns_per_episode_std'] = np.std(logs.pop('return_per_episode'))
         logs['num_frames_per_episode_std'] = np.std(logs.pop('num_frames_per_episode'))
+        logs['last_reward_per_episode_std'] = np.std(logs.pop('last_reward_per_episode'))
         logs.pop('reshaped_return_per_episode')
         for x in ('mean', 'min', 'max'):
             logs[f'return_per_episode_{x}'] = return_per_episode[x]
             logs[f'frames_per_episode_{x}'] = num_frames_per_episode[x]
+            logs[f'last_reward_per_episode_{x}'] = last_reward_per_episode[x]
         logs['update_number'] = update
         logs['elapsed_time'] = duration
         wandb.log(logs, step=num_frames)
