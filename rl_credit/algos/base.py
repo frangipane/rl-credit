@@ -116,6 +116,7 @@ class BaseAlgo(ABC):
         self.log_return = [0] * self.num_procs
         self.log_reshaped_return = [0] * self.num_procs
         self.log_num_frames = [0] * self.num_procs
+        self.log_last_reward = [0] * self.num_procs
 
     def collect_experiences(self):
         """Collects rollouts and computes advantages.
@@ -188,12 +189,16 @@ class BaseAlgo(ABC):
             self.log_episode_reshaped_return += self.rewards[i]
             self.log_episode_num_frames += torch.ones(self.num_procs, device=self.device)
 
-            for i, done_ in enumerate(done):
+            # loop through done status of each proc
+            for j, done_ in enumerate(done):
                 if done_:
                     self.log_done_counter += 1
-                    self.log_return.append(self.log_episode_return[i].item())
-                    self.log_reshaped_return.append(self.log_episode_reshaped_return[i].item())
-                    self.log_num_frames.append(self.log_episode_num_frames[i].item())
+                    self.log_return.append(self.log_episode_return[j].item())
+                    self.log_reshaped_return.append(self.log_episode_reshaped_return[j].item())
+                    self.log_num_frames.append(self.log_episode_num_frames[j].item())
+
+                    # log final reward
+                    self.log_last_reward.append(self.rewards[i, j].item())
 
             self.log_episode_return *= self.mask
             self.log_episode_reshaped_return *= self.mask
@@ -264,13 +269,15 @@ class BaseAlgo(ABC):
             "return_per_episode": self.log_return[-keep:],
             "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
             "num_frames_per_episode": self.log_num_frames[-keep:],
-            "num_frames": self.num_frames
+            "num_frames": self.num_frames,
+            "last_reward_per_episode": self.log_last_reward[-keep:]
         }
 
         self.log_done_counter = 0
         self.log_return = self.log_return[-self.num_procs:]
         self.log_reshaped_return = self.log_reshaped_return[-self.num_procs:]
         self.log_num_frames = self.log_num_frames[-self.num_procs:]
+        self.log_last_reward = self.log_last_reward[-self.num_procs:]
 
         return exps, logs
 
