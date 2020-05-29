@@ -105,7 +105,7 @@ class A2CAlgo(BaseAlgo):
             "value_std": value_std,
             "policy_loss": update_policy_loss,
             "value_loss": update_value_loss,
-            "grad_norm": update_grad_norm,
+            "grad_norm": update_grad_norm.item(),
             "adv_max": adv_max,
             "adv_min": adv_min,
             "adv_mean": adv_mean,

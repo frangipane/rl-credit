@@ -259,6 +259,9 @@ while num_frames < args.frames:
         header += ["return_" + key for key in return_per_episode.keys()]
         data += return_per_episode.values()
 
+        header += ["last_reward_" + key for key in last_reward_per_episode.keys()]
+        data += last_reward_per_episode.values()
+
         if status["num_frames"] == 0:
             csv_logger.writerow(header)
         csv_logger.writerow(data)
