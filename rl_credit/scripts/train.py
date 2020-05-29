@@ -6,6 +6,8 @@ import rl_credit
 import tensorboardX
 import sys
 import numpy as np
+import os
+import shutil
 
 import script_utils as utils
 from model import ACModel, ACModelVanilla, ACModelReturnHCA, ACModelStateHCA, ACAttention, AttentionQ
@@ -259,6 +261,9 @@ while num_frames < args.frames:
         header += ["return_" + key for key in return_per_episode.keys()]
         data += return_per_episode.values()
 
+        header += ["last_reward_" + key for key in last_reward_per_episode.keys()]
+        data += last_reward_per_episode.values()
+
         if status["num_frames"] == 0:
             csv_logger.writerow(header)
         csv_logger.writerow(data)
@@ -290,3 +295,8 @@ while num_frames < args.frames:
         logs['update_number'] = update
         logs['elapsed_time'] = duration
         wandb.log(logs, step=num_frames)
+
+
+# At end of run, copy model dir into wandb dir (includes csv logs and model dict)
+if wandb_dir is not None:
+    shutil.copytree(model_dir, os.path.join(wandb_dir, 'model'))

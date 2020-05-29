@@ -273,7 +273,7 @@ class AttentionAlgo(BaseAlgo):
             "value_std": value_std,
             "policy_loss": policy_loss.item(),
             "value_loss": value_loss.item(),
-            "grad_norm": update_grad_norm,
+            "grad_norm": update_grad_norm.item(),
             "adv_max": adv_max,
             "adv_min": adv_min,
             "adv_mean": adv_mean,
