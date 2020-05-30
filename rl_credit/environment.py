@@ -6,8 +6,7 @@ from gym_minigrid.envs.goalkeyoptional import GoalKeyOptionalEnv
 # gamma = 0.99
 DISCOUNT_FACTOR = 0.99
 DISCOUNT_TIMESCALE = 100
-
-STEPS_IN_PHASE1 = 50
+STEPS_IN_PHASE1 = 30
 
 
 class KeyGiftsGoalBaseEnv(ThreePhaseDelayedReward):
@@ -25,11 +24,11 @@ class KeyGiftsGoalBaseEnv(ThreePhaseDelayedReward):
             distractor_env=GiftsEnv,
             delayed_reward_env=GoalKeyOptionalEnv,
             delayed_reward_kwargs=dict(
-                size=8,
+                size=7,
                 key_color=None,
-                max_steps=2*8**2,
+                max_steps=100,
                 goal_reward=5.,
-                key_reward=20.,
+                key_reward=15.,
             )
         )
 
@@ -41,7 +40,7 @@ class VaryGiftsGoalEnv(KeyGiftsGoalBaseEnv):
         assert 'max_steps' in distractor_xtra_kwargs.keys()
 
         distractor_kwargs=dict(
-            size=6,
+            size=8,
             num_objs=4,
             gift_reward=5,
             max_steps=0.5*DISCOUNT_TIMESCALE,

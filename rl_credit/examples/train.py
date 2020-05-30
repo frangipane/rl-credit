@@ -83,10 +83,6 @@ def train(env_id,
         status = {"num_frames": 0, "update": 0}
     txt_logger.info("Training status loaded\n")
 
-    if "optimizer_state" in status:
-        algo.optimizer.load_state_dict(status["optimizer_state"])
-    txt_logger.info("Optimizer loaded\n")
-
     # Load observations preprocessor
     obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
     if "vocab" in status:
@@ -107,6 +103,7 @@ def train(env_id,
     txt_logger.info("{}\n".format(acmodel))
 
     # Load algo
+    algo_kwargs = algo_kwargs.copy()
     algo_kwargs.update({'acmodel': acmodel,
                         'envs': envs,
                         'device': device,
@@ -114,6 +111,10 @@ def train(env_id,
                         'preprocess_obss': preprocess_obss})
     if algo_name == 'a2c':
         algo = rl_credit.A2CAlgo(**algo_kwargs)
+
+    if "optimizer_state" in status:
+        algo.optimizer.load_state_dict(status["optimizer_state"])
+    txt_logger.info("Optimizer loaded\n")
 
     # Main training loop
 
