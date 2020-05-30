@@ -1,10 +1,28 @@
+import gym
 import wandb
 
 from rl_credit.environment import (
     DISCOUNT_TIMESCALE,
     DISCOUNT_FACTOR,
+    VaryGiftsGoalEnv,
 )
-from train import train
+from rl_credit.examples.train import train
+
+
+####################################################
+# Environments: Time delays in distractor phase
+
+class Delay0_Gifts(VaryGiftsGoalEnv):
+    def __init__(self):
+        distractor_xtra_kwargs = {'max_steps': 0.0 * DISCOUNT_TIMESCALE}
+        super().__init__(distractor_xtra_kwargs)
+
+
+class Delay0_5_Gifts(VaryGiftsGoalEnv):
+    def __init__(self):
+        distractor_xtra_kwargs = {'max_steps': 0.5 * DISCOUNT_TIMESCALE}
+        super().__init__(distractor_xtra_kwargs)
+
 
 
 ####################################################
@@ -72,8 +90,10 @@ if __name__ == '__main__':
 
     train_config.update({'algo_kwargs': algo_kwargs})
 
+    # expt run params to record in wandb
     wandb_params.update(train_config)
     wandb_params.update(common_algo_kwargs)
+    wandb_params.update({'env_params': str(vars(gym.make(train_config['env_id'])))})
     wandb_name = f"{train_config['algo_name']}|mem={train_config['recurrence']}|{train_config['env_id']}"
 
     wandb.init(

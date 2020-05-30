@@ -53,21 +53,6 @@ class VaryGiftsGoalEnv(KeyGiftsGoalBaseEnv):
 
 
 ####################################################
-# Environments: Time delays in distractor phase
-
-class Delay0_Gifts(VaryGiftsGoalEnv):
-    def __init__(self):
-        distractor_xtra_kwargs = {'max_steps': 0.0 * DISCOUNT_TIMESCALE}
-        super().__init__(distractor_xtra_kwargs)
-
-
-class Delay0_5_Gifts(VaryGiftsGoalEnv):
-    def __init__(self):
-        distractor_xtra_kwargs = {'max_steps': 0.5 * DISCOUNT_TIMESCALE}
-        super().__init__(distractor_xtra_kwargs)
-
-
-####################################################
 # Reward size in distractor phase
 
 class Mean0_Gifts(VaryGiftsGoalEnv):
