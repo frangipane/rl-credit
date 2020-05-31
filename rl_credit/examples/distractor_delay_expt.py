@@ -1,7 +1,7 @@
 import gym
 import wandb
 
-from rl_credit.environment import (
+from rl_credit.examples.environment import (
     DISCOUNT_TIMESCALE,
     DISCOUNT_FACTOR,
     VaryGiftsGoalEnv,
@@ -24,6 +24,11 @@ class Delay0_5_Gifts(VaryGiftsGoalEnv):
         super().__init__(distractor_xtra_kwargs)
 
 
+class Delay1_Gifts(VaryGiftsGoalEnv):
+    def __init__(self):
+        distractor_xtra_kwargs = {'max_steps': 1.0 * DISCOUNT_TIMESCALE}
+        super().__init__(distractor_xtra_kwargs)
+
 
 ####################################################
 # Config params shared among all experiments
@@ -31,7 +36,7 @@ class Delay0_5_Gifts(VaryGiftsGoalEnv):
 common_train_config = dict(
     num_procs=16,
     save_interval=300,
-    total_frames=16*600*300,  #2_880_000
+    total_frames=16*600*1000,  #9_600_000
     log_interval=1,
 )
 
@@ -48,37 +53,49 @@ common_algo_kwargs = dict(
     reshape_reward=None,
 )
 
-# Number of runs to average over per experiment
-seeds = range(5)
 
 ####################################################
 # Experiment-specific configs
 
-# experiment 1
-model_dir_stem='a2c_mem10_giftdelay0'
+##************ experiment 1 ************
+# model_dir_stem='a2c_mem10_giftdelay0'
+# expt_train_config = dict(
+#     env_id='GiftDistractorDelay0-v0',
+#     algo_name='a2c',
+#     recurrence=10,
+# )
+# expt_algo_kwargs = {}
+
+# # wandb metadata (tags, notes)
+# delay_factor = 'delay_factor=0'
+# delay_steps = 'delay_steps=0'
+# wandb_notes = 'A2C with recurrence=10, gift env delay=0'
+
+
+##************ experiment 2 ************
+model_dir_stem='a2c_mem10_giftdelay0_5-giftrew3'
 expt_train_config = dict(
-    env_id='GiftDistractorDelay0-v0',
+    env_id='GiftDistractorDelay0_5-v0',
     algo_name='a2c',
     recurrence=10,
 )
 expt_algo_kwargs = {}
-
-# wandb metadata (tags, notes)
-delay_factor = 'delay_factor=0'
-delay_steps = 'delay_steps=0'
-wandb_notes = 'A2C with recurrence=10, gift env delay=0'
+delay_factor = 'delay_factor=0.5'
+delay_steps = 'delay_steps=50'
+wandb_notes = 'A2C with recurrence=10, gift env delay=50 steps (50% of discount factor timescale)'
 
 
-# experiment 2
+##************ experiment 3 ************
+# model_dir_stem='a2c_mem10_giftdelay1'
 # expt_train_config = dict(
-#     env=Delay0_5Gifts,
-#     model_name='',
-#     model_dir='',
+#     env_id='GiftDistractorDelay1-v0',
 #     algo_name='a2c',
 #     recurrence=10,
 # )
-# delay_factor = 'delay_factor=0.5'
-# delay_steps = 'delay_steps=50'
+# expt_algo_kwargs = {}
+# delay_factor = 'delay_factor=1'
+# delay_steps = 'delay_steps=100'
+# wandb_notes = 'A2C with recurrence=10, gift env delay=100 steps (100% of discount factor timescale)'
 
 
 def main(seed):
@@ -111,7 +128,7 @@ def main(seed):
         notes=wandb_notes,
         reinit=True,
         group=wandb_name,
-        job_type='training'
+        job_type='training',
     )
 
     wandb_dir = wandb.run.dir
@@ -122,5 +139,8 @@ def main(seed):
 
 
 if __name__ == '__main__':
+    # Number of runs to average over per experiment
+    seeds = range(1, 5)
+
     for seed in seeds:
         main(seed)
