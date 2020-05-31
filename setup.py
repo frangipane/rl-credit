@@ -10,6 +10,5 @@ setup(
         "torch>=1.0.0",
         "gym-minigrid",
         "matplotlib",
-        "tensorboardX>=1.6"
     ]
 )

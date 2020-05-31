@@ -3,7 +3,6 @@ import time
 import datetime
 import torch
 import rl_credit
-import tensorboardX
 import sys
 import numpy as np
 import os
@@ -87,11 +86,10 @@ default_model_name = f"{args.env}_{args.algo}_seed{args.seed}_{date}"
 model_name = args.model or default_model_name
 model_dir = utils.get_model_dir(model_name)
 
-# Load loggers and Tensorboard writer
+# Load loggers
 
 txt_logger = utils.get_txt_logger(model_dir)
 csv_file, csv_logger = utils.get_csv_logger(model_dir)
-#tb_writer = tensorboardX.SummaryWriter(model_dir)
 
 # Log command and all script arguments
 
