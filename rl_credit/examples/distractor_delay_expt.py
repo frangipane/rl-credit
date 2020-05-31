@@ -73,29 +73,29 @@ common_algo_kwargs = dict(
 
 
 ##************ experiment 2 ************
-model_dir_stem='a2c_mem10_giftdelay0_5-giftrew3'
-expt_train_config = dict(
-    env_id='GiftDistractorDelay0_5-v0',
-    algo_name='a2c',
-    recurrence=10,
-)
-expt_algo_kwargs = {}
-delay_factor = 'delay_factor=0.5'
-delay_steps = 'delay_steps=50'
-wandb_notes = 'A2C with recurrence=10, gift env delay=50 steps (50% of discount factor timescale)'
-
-
-##************ experiment 3 ************
-# model_dir_stem='a2c_mem10_giftdelay1'
+# model_dir_stem='a2c_mem10_giftdelay0_5-giftrew3'
 # expt_train_config = dict(
-#     env_id='GiftDistractorDelay1-v0',
+#     env_id='GiftDistractorDelay0_5-v0',
 #     algo_name='a2c',
 #     recurrence=10,
 # )
 # expt_algo_kwargs = {}
-# delay_factor = 'delay_factor=1'
-# delay_steps = 'delay_steps=100'
-# wandb_notes = 'A2C with recurrence=10, gift env delay=100 steps (100% of discount factor timescale)'
+# delay_factor = 'delay_factor=0.5'
+# delay_steps = 'delay_steps=50'
+# wandb_notes = 'A2C with recurrence=10, gift env delay=50 steps (50% of discount factor timescale)'
+
+
+##************ experiment 3 ************
+model_dir_stem='a2c_mem10_giftdelay1'
+expt_train_config = dict(
+    env_id='GiftDistractorDelay1-v0',
+    algo_name='a2c',
+    recurrence=10,
+)
+expt_algo_kwargs = {}
+delay_factor = 'delay_factor=1'
+delay_steps = 'delay_steps=100'
+wandb_notes = 'A2C with recurrence=10, gift env delay=100 steps (100% of discount factor timescale)'
 
 
 def main(seed):
@@ -140,7 +140,7 @@ def main(seed):
 
 if __name__ == '__main__':
     # Number of runs to average over per experiment
-    seeds = range(1, 5)
+    seeds = range(5)
 
     for seed in seeds:
         main(seed)
