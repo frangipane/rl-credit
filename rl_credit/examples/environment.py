@@ -42,7 +42,7 @@ class VaryGiftsGoalEnv(KeyGiftsGoalBaseEnv):
         distractor_kwargs=dict(
             size=8,
             num_objs=4,
-            gift_reward=5,
+            gift_reward=3,
             max_steps=0.5*DISCOUNT_TIMESCALE,
             done_when_all_opened=False,
         )
