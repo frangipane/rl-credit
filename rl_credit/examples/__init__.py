@@ -30,3 +30,18 @@ register(
     id='GiftDistractorReward5-v0',
     entry_point='rl_credit.examples.distractor_mean_expt:Reward5_Gifts'
 )
+
+register(
+    id='GiftDistractorVar0-v0',
+    entry_point='rl_credit.examples.distractor_variance_expt:Var0_Gifts'
+)
+
+register(
+    id='GiftDistractorVar0_3-v0',
+    entry_point='rl_credit.examples.distractor_variance_expt:Var0_3_Gifts'
+)
+
+register(
+    id='GiftDistractorVar3-v0',
+    entry_point='rl_credit.examples.distractor_variance_expt:Var3_Gifts'
+)
