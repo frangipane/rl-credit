@@ -1,0 +1,14 @@
+name: rl-credit
+channels:
+  - pytorch
+dependencies:
+  - python=3.7
+  - pytorch>=1.0.0
+  - torchvision
+  - numpy>=1.13.0
+  - matplotlib
+  - seaborn
+  - pip
+  - pip:
+    - -e git+https://github.com/frangipane/gym-minigrid.git@master#egg=gym_minigrid
+    - wandb

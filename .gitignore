@@ -3,3 +3,6 @@
 build/*
 dist/*
 *~
+.azureml/*
+src/*
+conda_dependencies.yml
