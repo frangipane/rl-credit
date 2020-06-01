@@ -49,21 +49,3 @@ class VaryGiftsGoalEnv(KeyGiftsGoalBaseEnv):
         distractor_kwargs.update(distractor_xtra_kwargs)
 
         super().__init__(distractor_kwargs=distractor_kwargs)
-
-
-####################################################
-# Reward size in distractor phase
-
-class Mean0_Gifts(VaryGiftsGoalEnv):
-    distractor_xtra_kwargs = {'gift_reward': 0}
-
-
-####################################################
-# Reward variance in distractor phase
-
-class Var0_Gifts(VaryGiftsGoalEnv):
-    distractor_xtra_kwargs = {'gift_reward': [5, 5]}
-
-
-class Var2_Gifts(VaryGiftsGoalEnv):
-    distractor_xtra_kwargs = {'gift_reward': [3, 7]}
