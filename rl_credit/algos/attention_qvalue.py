@@ -33,7 +33,8 @@ class AttentionQAlgo(BaseAlgo):
                          store_embeddings=True)
 
         # TODO: allow user to pass in QAttentionModel instance and kwargs, e.g. in training script
-        self.qmodel = QAttentionModel(embedding_size=self.acmodel.semi_memory_size,
+        embed_size = self.acmodel.semi_memory_size
+        self.qmodel = QAttentionModel(embedding_size=embed_size,
                                       action_size=7,
                                       d_key=d_key)
 
@@ -72,9 +73,17 @@ class AttentionQAlgo(BaseAlgo):
 
         # ===== Calculate Qvalues using attention (context from experiences) =====
 
-        # Reshape embeddings -> tensor size (num_procs, frames_per_proc, *(embedding_size))
-        # T x P x D -> P x T x D
-        self.attn_obss = self.embeddings.transpose(0, 1)
+        # if self.acmodel.recurrent:
+        #     # Concat image embedding with hidden state
+        #     # Reshape embeddings -> (num_procs, frames_per_proc, *(2*embedding_size))
+        #     # T x P x (2D)
+        #     self.attn_obss = torch.cat((self.embeddings,
+        #                                 self.memories[:, :, :self.acmodel.semi_memory_size]), 2)
+        # else:
+        self.attn_obss = self.embeddings
+
+        # P X T X D
+        self.attn_obss = self.attn_obss.transpose(0, 1)
 
         # Reshape actions -> tensor size (num_procs, frames_per_proc, action_space.n)
         # T x P x 1 -> P x T x action_space.n

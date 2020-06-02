@@ -112,6 +112,7 @@ class ACModel(nn.Module, RecurrentACModel):
         x = obs.image.transpose(1, 3).transpose(2, 3)
         x = self.image_conv(x)
         x = x.reshape(x.shape[0], -1)
+        image_embedding = x
 
         if self.use_memory:
             hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
@@ -132,10 +133,7 @@ class ACModel(nn.Module, RecurrentACModel):
         value = x.squeeze(1)
 
         if self.return_embedding:
-            # if no memory, embedding is the img embedding, otherwise
-            # it's the hidden state of the LSTM, also (redundantly) stored
-            # in memory.
-            return dist, value, memory, embedding
+            return dist, value, memory, image_embedding
         else:
             return dist, value, memory
 
