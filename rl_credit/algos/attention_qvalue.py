@@ -113,18 +113,6 @@ class AttentionQAlgo(BaseAlgo):
 
         keep = max(self.log_done_counter, self.num_procs)
 
-        logs = {
-            "return_per_episode": self.log_return[-keep:],
-            "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
-            "num_frames_per_episode": self.log_num_frames[-keep:],
-            "num_frames": self.num_frames
-        }
-
-        self.log_done_counter = 0
-        self.log_return = self.log_return[-self.num_procs:]
-        self.log_reshaped_return = self.log_reshaped_return[-self.num_procs:]
-        self.log_num_frames = self.log_num_frames[-self.num_procs:]
-
         return exps, logs
 
     def update_parameters(self, exps):
