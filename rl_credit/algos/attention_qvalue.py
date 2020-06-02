@@ -181,7 +181,11 @@ class AttentionQAlgo(BaseAlgo):
                                      mask_future=True,
                                      custom_mask=self.attn_mask)
 
-        qvalue_loss = (qvalue - exps.returnn).pow(2).mean()
+        #qvalue_loss = (qvalue - exps.returnn).pow(2).mean()
+        #import pdb; pdb.set_trace()
+        y_target = (exps.returnn > 15.).long()
+        ce_loss = torch.nn.CrossEntropyLoss()
+        qvalue_loss = ce_loss(qvalue, y_target)
 
         # Update actor-critic
 
@@ -272,6 +276,8 @@ class AttentionQAlgo(BaseAlgo):
             "adv_mean": adv_mean,
             "adv_std": adv_std,
             "kl": approx_kl,
+            "num_returns_above_thresh": y_target.sum().item(),
+            "frac_returns_above_thresh": y_target.sum().item()/len(y_target)
         })
         return logs
 

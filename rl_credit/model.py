@@ -613,10 +613,15 @@ class QAttentionModel(nn.Module):
         self.Wk = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
         self.Wv = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
 
+        # self.Qvalue = nn.Sequential(
+        #     nn.Linear(d_key, 64),
+        #     nn.ReLU(),
+        #     nn.Linear(64, 1)
+        # )
         self.Qvalue = nn.Sequential(
             nn.Linear(d_key, 64),
             nn.ReLU(),
-            nn.Linear(64, 1)
+            nn.Linear(64, 2)
         )
 
     def forward(self, obs, act, mask_future=True, custom_mask=None):
@@ -659,6 +664,7 @@ class QAttentionModel(nn.Module):
         attn_out = torch.bmm(scores, values)   # batch_sz x seq_len x d_key
 
         x = self.Qvalue(attn_out.view(batch_sz * seq_len, self.d_key))
-        qvalue = x.squeeze(1)
+        #qvalue = x.squeeze(1)
 
-        return qvalue, scores
+        #return qvalue, scores
+        return x, scores
