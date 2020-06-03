@@ -74,14 +74,53 @@ class AttentionQAlgo(BaseAlgo):
         # ===== Calculate Qvalues using attention (context from experiences) =====
 
         # TODO: use qvalues and scores to modify advantage for TVT (not yet implemented)
-        self.qvalue, self.scores = self.get_attention_scores()
 
+        self.qvalue, self.scores, self.attn_mask = self.get_attention_scores()
+
+        # Calculate score importances (just average score)
+        su_scores, su_unmasked, importances = self.score_importance(self.scores, self.attn_mask)
 
         # Log some values
 
         keep = max(self.log_done_counter, self.num_procs)
 
         return exps, logs
+
+    @staticmethod
+    def score_importance(scores, masks):
+        """
+        Calculate importance as average score per column (excluding masked regions).
+
+        scores : tensor (batch_sz, seq_len, seq_len)
+        masks : tensor (batch_sz, seq_len, seq_len)
+
+        Returns
+        -------
+        summed_scores : tensor (batch_sz, seq_len), sum scores
+           per batch along columns ("total attendance" w/in an episode)
+
+        summed_unmasked : tensor (batch_sz, seq_len), counts, per batch, of
+           unmasked size along columns, used to calculate average attention score
+
+        importances : tensor (batch_sz, seq_len), average score, per batch,
+           per column.  Average excludes masked regions, which encompass future obs
+           and obs not in the same episode (a block diagonal with triangle mask)
+        """
+        seq_len = scores.shape[1]
+
+        # sum along columns per batch -> P x T
+        summed_scores = torch.sum(scores, dim=1).squeeze(1)
+
+        # Count number of non-zero entries along columns -> P x T.
+        # Since mask doesn't include mask from upper triangle, combine
+        # them into total mask here.
+        future_mask = torch.ones([seq_len, seq_len]).tril()
+        total_unmasked = ~(masks | (future_mask.expand_as(masks) == 0))
+        summed_unmasked = torch.sum(total_unmasked, dim=1)
+
+        importances = torch.div(summed_scores, summed_unmasked)
+
+        return summed_scores, summed_unmasked, importances
 
     def get_attention_scores(self):
         """
@@ -114,7 +153,7 @@ class AttentionQAlgo(BaseAlgo):
                       .unsqueeze(1)
                       .expand(-1, self.num_frames_per_proc, -1))
         # mask picks out elements outside the block diagonal to be masked out
-        self.attn_mask = (seq_labels - seq_labels.transpose(2, 1)) != 0
+        attn_mask = (seq_labels - seq_labels.transpose(2, 1)) != 0
 
         # just for debugging
         self.seq_labels_debug = seq_labels
@@ -131,8 +170,8 @@ class AttentionQAlgo(BaseAlgo):
             qvalue, scores = self.qmodel(obs=self.attn_obss,
                                          act=self.attn_actions,
                                          mask_future=True,
-                                         custom_mask=self.attn_mask)
-        return qvalue, scores
+                                         custom_mask=attn_mask)
+        return qvalue, scores, attn_mask
 
     def update_parameters(self, exps):
         self._update_number += 1
