@@ -73,6 +73,22 @@ class AttentionQAlgo(BaseAlgo):
 
         # ===== Calculate Qvalues using attention (context from experiences) =====
 
+        # TODO: use qvalues and scores to modify advantage for TVT (not yet implemented)
+        self.qvalue, self.scores = self.get_attention_scores()
+
+
+        # Log some values
+
+        keep = max(self.log_done_counter, self.num_procs)
+
+        return exps, logs
+
+    def get_attention_scores(self):
+        """
+        Classify obs and get attention scores from the classifier network.
+        Classifier is a binary classifier that tries to predict if returns for an obs
+        are greater than a threshold.
+        """
         # if self.acmodel.recurrent:
         #     # Concat image embedding with hidden state
         #     # Reshape embeddings -> (num_procs, frames_per_proc, *(2*embedding_size))
@@ -116,17 +132,7 @@ class AttentionQAlgo(BaseAlgo):
                                          act=self.attn_actions,
                                          mask_future=True,
                                          custom_mask=self.attn_mask)
-        # TODO: use qvalues and scores to modify advantage for TVT (not yet implemented)
-
-        # for debugging
-        self.qvalue = qvalue
-        self.scores = scores
-
-        # Log some values
-
-        keep = max(self.log_done_counter, self.num_procs)
-
-        return exps, logs
+        return qvalue, scores
 
     def update_parameters(self, exps):
         self._update_number += 1
