@@ -623,7 +623,7 @@ class QAttentionModel(nn.Module):
         self.Qvalue = nn.Sequential(
             nn.Linear(d_key, 64),
             nn.ReLU(),
-            nn.Linear(64, 2)
+            nn.Linear(64, 1)
         )
 
     def forward(self, obs, act, mask_future=True, custom_mask=None):

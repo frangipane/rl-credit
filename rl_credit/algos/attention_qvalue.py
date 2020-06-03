@@ -118,6 +118,10 @@ class AttentionQAlgo(BaseAlgo):
                                          custom_mask=self.attn_mask)
         # TODO: use qvalues and scores to modify advantage for TVT (not yet implemented)
 
+        # for debugging
+        self.qvalue = qvalue
+        self.scores = scores
+
         # Log some values
 
         keep = max(self.log_done_counter, self.num_procs)
@@ -192,9 +196,9 @@ class AttentionQAlgo(BaseAlgo):
 
         #qvalue_loss = (qvalue - exps.returnn).pow(2).mean()
         #import pdb; pdb.set_trace()
-        y_target = (exps.returnn > 15.).long()
-        ce_loss = torch.nn.CrossEntropyLoss()
-        qvalue_loss = ce_loss(qvalue, y_target)
+        y_target = (exps.returnn > 17.).float().unsqueeze(1)
+        pos_weight = torch.tensor([2])
+        qvalue_loss = F.binary_cross_entropy_with_logits(qvalue, y_target, pos_weight=pos_weight)
 
         # Update actor-critic
 
