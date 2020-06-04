@@ -101,6 +101,7 @@ class BaseAlgo(ABC):
         # For attention only
         self.seq_labels = torch.zeros(*shape, device=self.device)
         self.seq_label_delta = torch.zeros(shape[1], device=self.device)
+        self.rewards_togo = torch.zeros(*shape, device=self.device)
 
         if self.store_embeddings:
             # if not recurrent, store the image embeddings, otherwise the hidden states
@@ -230,6 +231,10 @@ class BaseAlgo(ABC):
             delta = self.rewards[i] + self.discount * next_value * next_mask - self.values[i]
             self.advantages[i] = delta + self.discount * self.gae_lambda * next_advantage * next_mask
 
+            # undiscounted return / rewards to go (not used by all algos)
+            next_reward_togo = self.rewards_togo[i+1] if i < self.num_frames_per_proc - 1 else next_value
+            self.rewards_togo[i] = self.rewards[i] + next_reward_togo * next_mask
+
         # Define experiences:
         #   the whole experience is the concatenation of the experience
         #   of each process.
@@ -260,6 +265,9 @@ class BaseAlgo(ABC):
         # Preprocess experiences
 
         exps.obs = self.preprocess_obss(exps.obs, device=self.device)
+
+        # for debugging only
+        self.exps = exps
 
         # Log some values
 

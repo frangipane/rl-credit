@@ -91,7 +91,7 @@ def train(env_id,
 
     # Load model
     use_mem = recurrence > 1
-    if algo_name == 'a2c':
+    if algo_name in ('a2c', 'attentionq'):
         acmodel = ACModel(obs_space, envs[0].action_space, use_mem, False)
     else:
         raise ValueError("Unrecognized algo")
@@ -111,6 +111,8 @@ def train(env_id,
                         'preprocess_obss': preprocess_obss})
     if algo_name == 'a2c':
         algo = rl_credit.A2CAlgo(**algo_kwargs)
+    elif algo_name == 'attentionq':
+        algo = rl_credit.AttentionQAlgo(**algo_kwargs)
 
     if "optimizer_state" in status:
         algo.optimizer.load_state_dict(status["optimizer_state"])
@@ -197,3 +199,4 @@ def train(env_id,
 
     # At end of run, copy model dir into wandb dir (includes csv logs and model dict)
     shutil.copytree(model_dir, os.path.join(wandb_dir, 'model'))
+    return algo  # for interactive debugging

@@ -112,6 +112,7 @@ class ACModel(nn.Module, RecurrentACModel):
         x = obs.image.transpose(1, 3).transpose(2, 3)
         x = self.image_conv(x)
         x = x.reshape(x.shape[0], -1)
+        image_embedding = x
 
         if self.use_memory:
             hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
@@ -132,10 +133,7 @@ class ACModel(nn.Module, RecurrentACModel):
         value = x.squeeze(1)
 
         if self.return_embedding:
-            # if no memory, embedding is the img embedding, otherwise
-            # it's the hidden state of the LSTM, also (redundantly) stored
-            # in memory.
-            return dist, value, memory, embedding
+            return dist, value, memory, image_embedding
         else:
             return dist, value, memory
 
@@ -606,13 +604,22 @@ class QAttentionModel(nn.Module):
 
         self.d_key = d_key
 
-        self._action_embed_size = 32
-        self.action_embed = nn.Linear(action_size, self._action_embed_size)
+        # self._action_embed_size = 32
+        # self.action_embed = nn.Linear(action_size, self._action_embed_size)
 
-        self.Wq = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
-        self.Wk = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
-        self.Wv = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+        # self.Wq = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+        # self.Wk = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+        # self.Wv = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
 
+        self.Wq = nn.Linear(embedding_size, d_key, bias=False)
+        self.Wk = nn.Linear(embedding_size, d_key, bias=False)
+        self.Wv = nn.Linear(embedding_size, d_key, bias=False)
+
+        # self.Qvalue = nn.Sequential(
+        #     nn.Linear(d_key, 64),
+        #     nn.ReLU(),
+        #     nn.Linear(64, 1)
+        # )
         self.Qvalue = nn.Sequential(
             nn.Linear(d_key, 64),
             nn.ReLU(),
@@ -637,9 +644,9 @@ class QAttentionModel(nn.Module):
         """
         batch_sz, seq_len, _ = obs.shape
 
-        action_embedding = self.action_embed(act.reshape(batch_sz * seq_len, -1))
+        #action_embedding = self.action_embed(act.reshape(batch_sz * seq_len, -1))
 
-        x = torch.cat((obs.reshape(batch_sz * seq_len, -1), action_embedding), dim=1)
+        x = obs.reshape(batch_sz * seq_len, -1)
 
         # batch_sz x seq_len x d_key
         queries = self.Wq(x).view(batch_sz, seq_len, self.d_key) / (self.d_key ** (1/4))
@@ -659,6 +666,7 @@ class QAttentionModel(nn.Module):
         attn_out = torch.bmm(scores, values)   # batch_sz x seq_len x d_key
 
         x = self.Qvalue(attn_out.view(batch_sz * seq_len, self.d_key))
-        qvalue = x.squeeze(1)
+        #qvalue = x.squeeze(1)
 
-        return qvalue, scores
+        #return qvalue, scores
+        return x, scores
