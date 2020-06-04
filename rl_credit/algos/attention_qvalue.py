@@ -45,6 +45,13 @@ class AttentionQAlgo(BaseAlgo):
         self.qvalue_optimizer = torch.optim.RMSprop(self.qmodel.parameters(), lr,
                                                     alpha=rmsprop_alpha, eps=rmsprop_eps)
 
+        # TODO: include this as kwarg in constructor.  Must be b/w 0 and 1.
+        self.importance_threshold = 0.05
+        self.tvt_alpha = 0.9  # tvt reward multiplier
+        self.use_tvt = True
+        self.y_moving_avg_alpha = 0.1 # higher discounts older obs faster
+
+        self.y_max_return = 0.
         self._update_number = 0  # convenience, for debugging, occasional saves
         self.wandb_dir = wandb_dir
 
@@ -70,6 +77,13 @@ class AttentionQAlgo(BaseAlgo):
         """
         # Step through env using A2C
         exps, logs = super().collect_experiences()
+
+        # Update max returns (moving average)
+        max_return = max(logs['return_per_episode'])  # undiscounted returns
+        if max_return > self.y_max_return:
+            self.y_max_return += self.y_moving_avg_alpha * (max_return - self.y_max_return)
+        print('y_max_return', self.y_max_return)
+        logs.update({'return_classifier_thresh': self.y_max_return})
 
         # ===== Calculate Qvalues using attention (context from experiences) =====
 
@@ -241,7 +255,7 @@ class AttentionQAlgo(BaseAlgo):
 
         #qvalue_loss = (qvalue - exps.returnn).pow(2).mean()
         #import pdb; pdb.set_trace()
-        y_target = (exps.returnn > 17.).float().unsqueeze(1)
+        y_target = (exps.returnn > self.y_max_return).float().unsqueeze(1)
         pos_weight = torch.tensor([2])
         qvalue_loss = F.binary_cross_entropy_with_logits(qvalue, y_target, pos_weight=pos_weight)
 
