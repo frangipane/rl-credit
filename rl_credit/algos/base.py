@@ -266,7 +266,7 @@ class BaseAlgo(ABC):
 
         exps.obs = self.preprocess_obss(exps.obs, device=self.device)
 
-        # TODO remove, for debugging only
+        # for debugging only
         self.exps = exps
 
         # Log some values

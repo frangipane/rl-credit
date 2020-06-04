@@ -12,6 +12,9 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 
+import wandb
+import seaborn as sns
+
 from rl_credit.utils import DictList, ParallelEnv
 import rl_credit.script_utils as utils
 
@@ -22,10 +25,11 @@ from rl_credit.model import QAttentionModel
 class AttentionQAlgo(BaseAlgo):
     """The Advantage Actor-Critic algorithm with a separate attention Qvalue model"""
 
-    def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01, gae_lambda=0.95,
-                 entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
-                 rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None, reshape_reward=None,
-                 wandb_dir=None, d_key=30):
+    def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01,
+                 gae_lambda=0.95, entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5,
+                 recurrence=4, rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None,
+                 reshape_reward=None, wandb_dir=None, d_key=30, use_tvt=True,
+                 importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1):
         num_frames_per_proc = num_frames_per_proc or 8
 
         super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
@@ -45,11 +49,10 @@ class AttentionQAlgo(BaseAlgo):
         self.qvalue_optimizer = torch.optim.RMSprop(self.qmodel.parameters(), lr,
                                                     alpha=rmsprop_alpha, eps=rmsprop_eps)
 
-        # TODO: include this as kwarg in constructor.  Must be b/w 0 and 1.
-        self.importance_threshold = 0.05
-        self.tvt_alpha = 0.9  # tvt reward multiplier
-        self.use_tvt = True
-        self.y_moving_avg_alpha = 0.1 # higher discounts older obs faster
+        self.use_tvt = use_tvt
+        self.importance_threshold = importance_threshold  # Must be b/w 0 and 1.
+        self.tvt_alpha = tvt_alpha                        # tvt reward multiplier
+        self.y_moving_avg_alpha = y_moving_avg_alpha      # higher discounts older obs faster
 
         self.y_max_return = 0.
         self._update_number = 0  # convenience, for debugging, occasional saves
@@ -78,25 +81,63 @@ class AttentionQAlgo(BaseAlgo):
         # Step through env using A2C
         exps, logs = super().collect_experiences()
 
-        # Update max returns (moving average)
+        # Update max returns (moving average) seen in training run
         max_return = max(logs['return_per_episode'])  # undiscounted returns
         if max_return > self.y_max_return:
             self.y_max_return += self.y_moving_avg_alpha * (max_return - self.y_max_return)
-        print('y_max_return', self.y_max_return)
-        logs.update({'return_classifier_thresh': self.y_max_return})
 
-        # ===== Calculate Qvalues using attention (context from experiences) =====
+        # ===== Use most highly attended observations for TVT =====
 
-        # TODO: use qvalues and scores to modify advantage for TVT (not yet implemented)
-
-        self.qvalue, self.scores, self.attn_mask = self.get_attention_scores()
+        _, scores, self.attn_mask, self.attn_obss, self.attn_actions = self.get_attention_scores()
 
         # Calculate score importances (just average score)
-        su_scores, su_unmasked, importances = self.score_importance(self.scores, self.attn_mask)
+        su_scores, su_unmasked, self.importances = self.score_importance(scores, self.attn_mask)
+
+        # Get importances and indices for all obs with score above threshold
+        importance_mask = self.importances > self.importance_threshold  # (num_procs, frames_per_proc)
+        self.top_imp = self.importances[importance_mask]
+        self.top_imp_idxs = torch.nonzero(importance_mask)
+        top_rew2go = self.rewards_togo.transpose(0,1)[importance_mask]
+
+        # logging
+        tvt_rewards = []
+
+        self.tvt_advantages = self.advantages.clone().detach()
+        for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
+            tvt_reward = tvt_val * self.tvt_alpha * weight
+            tvt_rewards.append(tvt_reward)
+            self.tvt_advantages[idx[1], idx[0]] += tvt_reward
+
+        if self.use_tvt:
+            # Modify the advantages of the most important obs by adding the undiscounted
+            # rewards-to-go to their advantage
+            exps.advantage = self.tvt_advantages.transpose(0,1).reshape(-1)
+            exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
 
         # Log some values
 
-        keep = max(self.log_done_counter, self.num_procs)
+        tvt_rewards = np.array(tvt_rewards)
+        logs.update({'return_classifier_thresh': self.y_max_return,
+                     'top_scores_max': self.top_imp.max().item(),
+                     'top_scores_mean': self.top_imp.mean().item(),
+                     'top_scores_min': self.top_imp.min().item(),
+                     'top_rew2go_max': top_rew2go.max().item(),
+                     'top_rew2go_mean': top_rew2go.mean().item(),
+                     'top_rew2go_min': top_rew2go.min().item(),
+                     'tvt_reward_max': tvt_rewards.max(),
+                     'tvt_reward_mean': tvt_rewards.mean(),
+                     'tvt_reward_min': tvt_rewards.min(),
+
+                     # unnormalized advantages before and after TVT
+                     "adv_max": self.advantages.max().item(),
+                     "adv_min": self.advantages.min().item(),
+                     "adv_mean": self.advantages.mean().item(),
+                     "adv_std": self.advantages.std().item(),
+                     "adv_tvt_max": self.tvt_advantages.max().item(),
+                     "adv_tvt_min": self.tvt_advantages.min().item(),
+                     "adv_tvt_mean": self.tvt_advantages.mean().item(),
+                     "adv_tvt_std": self.tvt_advantages.std().item(),
+        })
 
         return exps, logs
 
@@ -149,15 +190,15 @@ class AttentionQAlgo(BaseAlgo):
         #     self.attn_obss = torch.cat((self.embeddings,
         #                                 self.memories[:, :, :self.acmodel.semi_memory_size]), 2)
         # else:
-        self.attn_obss = self.embeddings
+        attn_obss = self.embeddings
 
         # P X T X D
-        self.attn_obss = self.attn_obss.transpose(0, 1)
+        attn_obss = attn_obss.transpose(0, 1)
 
         # Reshape actions -> tensor size (num_procs, frames_per_proc, action_space.n)
         # T x P x 1 -> P x T x action_space.n
-        self.attn_actions = (torch.nn.functional.one_hot(self.actions.long(), 7)
-                            .transpose(0, 1).float())
+        attn_actions = (torch.nn.functional.one_hot(self.actions.long(), 7)
+                        .transpose(0, 1).float())
 
         # Create block diagonal mask so observations from different
         # episodes don't pay attention to each other.
@@ -181,11 +222,12 @@ class AttentionQAlgo(BaseAlgo):
         # self.obss_mat is size (batch size=num_procs, seq len=frames per proc, *(image_dim))
 
         with torch.no_grad():
-            qvalue, scores = self.qmodel(obs=self.attn_obss,
-                                         act=self.attn_actions,
+            qvalue, scores = self.qmodel(obs=attn_obss,
+                                         act=attn_actions,
                                          mask_future=True,
                                          custom_mask=attn_mask)
-        return qvalue, scores, attn_mask
+
+        return qvalue, scores, attn_mask, attn_obss, attn_actions
 
     def update_parameters(self, exps):
         self._update_number += 1
@@ -253,8 +295,6 @@ class AttentionQAlgo(BaseAlgo):
                                      mask_future=True,
                                      custom_mask=self.attn_mask)
 
-        #qvalue_loss = (qvalue - exps.returnn).pow(2).mean()
-        #import pdb; pdb.set_trace()
         y_target = (exps.returnn > self.y_max_return).float().unsqueeze(1)
         pos_weight = torch.tensor([2])
         qvalue_loss = F.binary_cross_entropy_with_logits(qvalue, y_target, pos_weight=pos_weight)
@@ -277,37 +317,10 @@ class AttentionQAlgo(BaseAlgo):
 
         # Log some values
 
-        # Save attention scores heatmap every 100 updates
-        if self.wandb_dir is not None and self._update_number % 100 == 0:
-            import wandb
-            import seaborn as sns
-
-            scores0 = scores[0].detach()
-            attn_fig = sns.heatmap(scores0.numpy(), xticklabels=10, yticklabels=10).get_figure()
-            img_name_base = str(os.path.join(self.wandb_dir,
-                                             f'attn_scores_{self._update_number:04}'))
-            attn_fig.savefig(img_name_base, fmt='png')
-            wandb.save(img_name_base + '*')
-            plt.clf()
-
-            # # For debugging
-            # labels_fig = (sns.heatmap(self.seq_labels_debug[0].detach().numpy(), xticklabels=10, yticklabels=10)
-            #               .get_figure())
-            # labels_fig_base = str(os.path.join(self.wandb_dir,
-            #                                    f'episode_labels_{self._update_number:04}'))
-            # labels_fig.savefig(labels_fig_base, fmt='png')
-            # plt.clf()
-
-            mask_fig = (sns.heatmap(self.attn_mask[0].detach().numpy(), xticklabels=10, yticklabels=10)
-                        .get_figure())
-            mask_fig_base = str(os.path.join(self.wandb_dir,
-                                             f'mask_{self._update_number:04}'))
-            mask_fig.savefig(mask_fig_base, fmt='png')
-            plt.clf()
-
-            self.calculate_and_save_top_attended(scores0, self.obss_mat[0].numpy(),
-                                                 self.actions.detach()[:, 0].squeeze(),
-                                                 out_dir=self.wandb_dir)
+        # Save attention scores heatmap every 200 updates
+        if self.wandb_dir is not None and self._update_number % 200 == 0:
+            self.save_attention_plots(scores)
+            self.save_top_attended_obs(k=10)
 
         with torch.no_grad():
             # evaluate KL divergence b/w old and new policy
@@ -353,49 +366,60 @@ class AttentionQAlgo(BaseAlgo):
         })
         return logs
 
-    def calculate_and_save_top_attended(self, scores, obs, actions, k=5, out_dir=None):
-        """
-        Plot the k-top attended observations as measured by summing attention scores
-        across all frames.
+    def save_attention_plots(self, scores):
+        # Importance scores (averaged attention weights)
+        attn_fig = sns.heatmap(self.importances.numpy()).get_figure()
+        self._save_fig(attn_fig, self.wandb_dir, f'importances_heatmap_{self._update_number:04}')
 
-        Also plot histogram of importance scores.
+        # Raw (unaveraged) scores for 0th batch (proc=0)
+        scores0 = scores[0].detach()
+        attn_fig = sns.heatmap(scores0.numpy(), xticklabels=15, yticklabels=15).get_figure()
+        self._save_fig(attn_fig, self.wandb_dir, f'attn_scores_{self._update_number:04}')
 
-        scores : torch tensor (frames_per_proc, frames_per_proc)
-        obs : torch tensor (frames_per_proc, *(image-size))
-        actions : torch tensor (frames_per_proc)
-        k : int, number of top most attended images to save
-        """
-        importance = torch.sum(scores, dim=0).squeeze(0)
-        print('max importance', importance.max())
+        # Within 0th batch inter-episode mask
+        mask_fig = (sns.heatmap(self.attn_mask[0].detach().numpy(), xticklabels=15, yticklabels=15)
+                    .get_figure())
+        self._save_fig(mask_fig, self.wandb_dir, f'mask_{self._update_number:04}')
 
-        _, indices = torch.sort(importance, descending=True)
-        indices = indices[:k]
+        # Histogram of importances
+        fig, ax = plt.subplots()
+        plt.hist(self.top_imp.flatten().numpy(), bins=50, label='top', alpha=0.5)
+        ax.set_title('Top importance scores')
+        ax.set_xlabel('Importance')
+        ax.set_ylabel('Counts')
+        self._save_fig(fig, self.wandb_dir, f'top_importances_hist_{self._update_number:04}.png')
+
+    def save_top_attended_obs(self, k=10):
+        """Save top k most important obs"""
         map_actions = {0: 'left',
                        1: 'right',
-                       2:'forward',
+                       2: 'forward',
                        3: 'pickup',
                        4: 'drop',
                        5: 'toggle',
                        6: 'done'}
 
-        fig = plt.hist(importance.numpy(), bins=30)
-        plt.title('Importance from summed attention scores')
-        plt.xlabel('Importance')
-        plt.ylabel('Counts')
-        plt.savefig(os.path.join(out_dir, f'update{self._update_number:04}_importance.png'))
+        for i in range(min(k, len(self.top_imp))):
+            proc, frame = self.top_imp_idxs[i]
+            score = str(self.top_imp[i].numpy().round(2))
+            act = map_actions[self.actions[frame, proc].item()]
+            fname = f'obs_{self._update_number:04}_proc{proc}_fr{frame:03}_score{score}__{act}.png'
+
+            self._save_obs(self.obss_mat[proc, frame].numpy(),
+                           self.wandb_dir,
+                           fname)
+
+    @staticmethod
+    def _save_fig(fig, out_dir, fname):
+        dest = str(os.path.join(out_dir, fname))
+        fig.savefig(dest, fmt='png')
+        wandb.save(dest + '*')
         plt.clf()
 
-        for idx in indices:
-            img = self._get_obs_render(obs[idx])
-            act = map_actions[actions[idx].item()]
-            rnd_score = str(importance[idx].numpy().round(1))
-            fname = f"update{self._update_number:04}__fr{idx:03}__score{rnd_score}__{act}.png"
-            plt.imsave(os.path.join(out_dir, fname), img)
-            plt.clf()
-
-    def _get_obs_render(self, obs, tile_size=16):
+    @staticmethod
+    def _save_obs(obs, out_dir, fname, tile_size=12):
         """
-        Render an agent observation for visualization
+        Render an agent observation and save as image
         """
         from gym_minigrid.minigrid import Grid
         agent_view_size = obs.shape[0]
@@ -408,7 +432,8 @@ class AttentionQAlgo(BaseAlgo):
             agent_dir=3,
             highlight_mask=vis_mask
         )
-        return img
+        plt.imsave(os.path.join(out_dir, fname), img)
+        plt.clf()
 
     def _get_starting_indexes(self):
         """Gives the indexes of the observations given to the model and the
