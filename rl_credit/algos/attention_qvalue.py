@@ -8,12 +8,10 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import torch
 import torch.nn.functional as F
-
-import wandb
-import seaborn as sns
 
 from rl_credit.utils import DictList, ParallelEnv
 import rl_credit.script_utils as utils
@@ -28,7 +26,7 @@ class AttentionQAlgo(BaseAlgo):
     def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.01,
                  gae_lambda=0.95, entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5,
                  recurrence=4, rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None,
-                 reshape_reward=None, wandb_dir=None, d_key=30, use_tvt=True,
+                 reshape_reward=None, plots_dir=None, d_key=30, use_tvt=True,
                  importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1, pos_weight=2,
                  embed_actions=False):
         num_frames_per_proc = num_frames_per_proc or 8
@@ -60,7 +58,7 @@ class AttentionQAlgo(BaseAlgo):
 
         self.y_max_return = 0.
         self._update_number = 0  # convenience, for debugging, occasional saves
-        self.wandb_dir = wandb_dir
+        self.plots_dir = plots_dir
 
     def collect_experiences(self):
         """Collects rollouts and computes advantages.
@@ -322,8 +320,8 @@ class AttentionQAlgo(BaseAlgo):
 
         # Log some values
 
-        # Save attention scores heatmap every 200 updates
-        if self.wandb_dir is not None and self._update_number % 100 == 0:
+        # Save attention scores heatmap every 100 updates
+        if self.plots_dir is not None and self._update_number % 100 == 0:
             self.save_attention_plots(scores)
             self.save_top_attended_obs(k=10)
 
@@ -373,26 +371,26 @@ class AttentionQAlgo(BaseAlgo):
 
     def save_attention_plots(self, scores):
         # Importance scores (averaged attention weights)
-        attn_fig = sns.heatmap(self.importances.numpy()).get_figure()
-        self._save_fig(attn_fig, self.wandb_dir, f'importances_heatmap_{self._update_number:04}')
+        attn_fig = sns.heatmap(self.importances.cpu().numpy()).get_figure()
+        self._save_fig(attn_fig, self.plots_dir, f'importances_heatmap_{self._update_number:04}')
 
         # Raw (unaveraged) scores for 0th batch (proc=0)
         scores0 = scores[0].detach()
-        attn_fig = sns.heatmap(scores0.numpy(), xticklabels=15, yticklabels=15).get_figure()
-        self._save_fig(attn_fig, self.wandb_dir, f'attn_scores_{self._update_number:04}')
+        attn_fig = sns.heatmap(scores0.cpu().numpy(), xticklabels=15, yticklabels=15).get_figure()
+        self._save_fig(attn_fig, self.plots_dir, f'attn_scores_{self._update_number:04}')
 
         # Within 0th batch inter-episode mask
-        mask_fig = (sns.heatmap(self.attn_mask[0].detach().numpy(), xticklabels=15, yticklabels=15)
+        mask_fig = (sns.heatmap(self.attn_mask[0].detach().cpu().numpy(), xticklabels=15, yticklabels=15)
                     .get_figure())
-        self._save_fig(mask_fig, self.wandb_dir, f'mask_{self._update_number:04}')
+        self._save_fig(mask_fig, self.plots_dir, f'mask_{self._update_number:04}')
 
         # Histogram of importances
         fig, ax = plt.subplots()
-        plt.hist(self.top_imp.flatten().numpy(), bins=50, label='top', alpha=0.5)
+        plt.hist(self.top_imp.flatten().cpu().numpy(), bins=50, label='top', alpha=0.5)
         ax.set_title('Top importance scores')
         ax.set_xlabel('Importance')
         ax.set_ylabel('Counts')
-        self._save_fig(fig, self.wandb_dir, f'top_importances_hist_{self._update_number:04}.png')
+        self._save_fig(fig, self.plots_dir, f'top_importances_hist_{self._update_number:04}.png')
 
     def save_top_attended_obs(self, k=10):
         """Save top k most important obs"""
@@ -408,19 +406,18 @@ class AttentionQAlgo(BaseAlgo):
 
         for i in range(min(k, len(self.top_imp))):
             proc, frame = self.top_imp_idxs[sorted_idxs[i]]
-            score = str(sorted_top_imp[i].numpy().round(2))
+            score = str(sorted_top_imp[i].cpu().numpy().round(2))
             act = map_actions[self.actions[frame, proc].item()]
             fname = f'obs_{self._update_number:04}_proc{proc}_fr{frame:03}_score{score}__{act}.png'
 
-            self._save_obs(self.obss_mat[proc, frame].numpy(),
-                           self.wandb_dir,
+            self._save_obs(self.obss_mat[proc, frame].cpu().numpy(),
+                           self.plots_dir,
                            fname)
 
     @staticmethod
     def _save_fig(fig, out_dir, fname):
         dest = str(os.path.join(out_dir, fname))
         fig.savefig(dest, fmt='png')
-        wandb.save(dest + '*')
         plt.clf()
 
     @staticmethod

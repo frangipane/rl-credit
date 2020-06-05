@@ -196,7 +196,7 @@ elif args.algo == "attention":
 elif args.algo == "attentionq":
     algo = rl_credit.AttentionQAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                     args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                                    args.optim_alpha, args.optim_eps, preprocess_obss, wandb_dir=wandb_dir,
+                                    args.optim_alpha, args.optim_eps, preprocess_obss, plots_dir=wandb_dir,
                                     d_key=args.d_key)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
