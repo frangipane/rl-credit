@@ -29,7 +29,7 @@ class AttentionQAlgo(BaseAlgo):
                  gae_lambda=0.95, entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5,
                  recurrence=4, rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None,
                  reshape_reward=None, wandb_dir=None, d_key=30, use_tvt=True,
-                 importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1):
+                 importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1, pos_weight=2):
         num_frames_per_proc = num_frames_per_proc or 8
 
         super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
@@ -53,6 +53,7 @@ class AttentionQAlgo(BaseAlgo):
         self.importance_threshold = importance_threshold  # Must be b/w 0 and 1.
         self.tvt_alpha = tvt_alpha                        # tvt reward multiplier
         self.y_moving_avg_alpha = y_moving_avg_alpha      # higher discounts older obs faster
+        self.pos_weight = torch.tensor([pos_weight])      # Weight for positive class in binary CE
 
         self.y_max_return = 0.
         self._update_number = 0  # convenience, for debugging, occasional saves
@@ -297,7 +298,7 @@ class AttentionQAlgo(BaseAlgo):
                                      custom_mask=self.attn_mask)
 
         y_target = (exps.rewards_togo > self.y_max_return).float().unsqueeze(1)
-        pos_weight = torch.tensor([2])
+        pos_weight = torch.tensor([self.pos_weight])
         qvalue_loss = F.binary_cross_entropy_with_logits(qvalue, y_target, pos_weight=pos_weight)
 
         # Update actor-critic
