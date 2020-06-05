@@ -43,6 +43,7 @@ class AttentionQAlgo(BaseAlgo):
                                       action_size=7,
                                       d_key=d_key,
                                       embed_actions=embed_actions)
+        self.qmodel.to(device)
 
         self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
@@ -107,14 +108,15 @@ class AttentionQAlgo(BaseAlgo):
             tvt_rewards = []
 
             self.tvt_advantages = self.advantages.clone().detach()
+
+            # Modify the advantages of the most important obs by adding the undiscounted
+            # rewards-to-go to their advantage
             for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
                 tvt_reward = tvt_val * self.tvt_alpha * weight
-                tvt_rewards.append(tvt_reward)
                 self.tvt_advantages[idx[1], idx[0]] += tvt_reward
+                tvt_rewards.append(tvt_reward.item())
 
             if self.use_tvt:
-                # Modify the advantages of the most important obs by adding the undiscounted
-                # rewards-to-go to their advantage
                 exps.advantage = self.tvt_advantages.transpose(0,1).reshape(-1)
                 exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
 
@@ -145,8 +147,7 @@ class AttentionQAlgo(BaseAlgo):
 
         return exps, logs
 
-    @staticmethod
-    def score_importance(scores, masks):
+    def score_importance(self, scores, masks):
         """
         Calculate importance as average score per column (excluding masked regions).
 
@@ -173,7 +174,7 @@ class AttentionQAlgo(BaseAlgo):
         # Count number of non-zero entries along columns -> P x T.
         # Since mask doesn't include mask from upper triangle, combine
         # them into total mask here.
-        future_mask = torch.ones([seq_len, seq_len]).tril()
+        future_mask = torch.ones([seq_len, seq_len], device=self.device).tril()
         total_unmasked = ~(masks | (future_mask.expand_as(masks) == 0))
         summed_unmasked = torch.sum(total_unmasked, dim=1)
 
@@ -299,8 +300,8 @@ class AttentionQAlgo(BaseAlgo):
                                      mask_future=True,
                                      custom_mask=self.attn_mask)
 
-        y_target = (exps.rewards_togo > self.y_max_return).float().unsqueeze(1)
-        pos_weight = torch.tensor([self.pos_weight])
+        y_target = (exps.rewards_togo > self.y_max_return).float().unsqueeze(1).to(self.device)
+        pos_weight = torch.tensor([self.pos_weight], device=self.device)
         qvalue_loss = F.binary_cross_entropy_with_logits(qvalue, y_target, pos_weight=pos_weight)
 
         # Update actor-critic

@@ -7,3 +7,4 @@ azureml-setup
 docs
 wandb/
 storage
+notebook_images*
