@@ -29,7 +29,8 @@ class AttentionQAlgo(BaseAlgo):
                  gae_lambda=0.95, entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5,
                  recurrence=4, rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None,
                  reshape_reward=None, wandb_dir=None, d_key=30, use_tvt=True,
-                 importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1, pos_weight=2):
+                 importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1, pos_weight=2,
+                 embed_actions=False):
         num_frames_per_proc = num_frames_per_proc or 8
 
         super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
@@ -40,7 +41,8 @@ class AttentionQAlgo(BaseAlgo):
         embed_size = self.acmodel.semi_memory_size
         self.qmodel = QAttentionModel(embedding_size=embed_size,
                                       action_size=7,
-                                      d_key=d_key)
+                                      d_key=d_key,
+                                      embed_actions=embed_actions)
 
         self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
