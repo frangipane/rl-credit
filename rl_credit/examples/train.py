@@ -56,6 +56,9 @@ def train(env_id,
     # set run dir
     model_dir = utils.get_model_dir(model_dir_stem)
 
+    # set plots output dir, only for attention model
+    plots_dir = model_dir
+
     # Load loggers
     txt_logger = utils.get_txt_logger(model_dir)
     csv_file, csv_logger = utils.get_csv_logger(model_dir)
@@ -112,7 +115,7 @@ def train(env_id,
     if algo_name == 'a2c':
         algo = rl_credit.A2CAlgo(**algo_kwargs)
     elif algo_name == 'attentionq':
-        algo = rl_credit.AttentionQAlgo(**algo_kwargs)
+        algo = rl_credit.AttentionQAlgo(**algo_kwargs, plots_dir=plots_dir)
 
     if "optimizer_state" in status:
         algo.optimizer.load_state_dict(status["optimizer_state"])
