@@ -295,7 +295,7 @@ class AttentionQAlgo(BaseAlgo):
                                      mask_future=True,
                                      custom_mask=self.attn_mask)
 
-        y_target = (exps.returnn > self.y_max_return).float().unsqueeze(1)
+        y_target = (exps.rewards_togo > self.y_max_return).float().unsqueeze(1)
         pos_weight = torch.tensor([2])
         qvalue_loss = F.binary_cross_entropy_with_logits(qvalue, y_target, pos_weight=pos_weight)
 
