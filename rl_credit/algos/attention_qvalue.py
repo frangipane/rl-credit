@@ -318,7 +318,7 @@ class AttentionQAlgo(BaseAlgo):
         # Log some values
 
         # Save attention scores heatmap every 200 updates
-        if self.wandb_dir is not None and self._update_number % 200 == 0:
+        if self.wandb_dir is not None and self._update_number % 100 == 0:
             self.save_attention_plots(scores)
             self.save_top_attended_obs(k=10)
 
@@ -399,9 +399,11 @@ class AttentionQAlgo(BaseAlgo):
                        5: 'toggle',
                        6: 'done'}
 
+        sorted_top_imp, sorted_idxs = torch.sort(self.top_imp, descending=True)
+
         for i in range(min(k, len(self.top_imp))):
-            proc, frame = self.top_imp_idxs[i]
-            score = str(self.top_imp[i].numpy().round(2))
+            proc, frame = self.top_imp_idxs[sorted_idxs[i]]
+            score = str(sorted_top_imp[i].numpy().round(2))
             act = map_actions[self.actions[frame, proc].item()]
             fname = f'obs_{self._update_number:04}_proc{proc}_fr{frame:03}_score{score}__{act}.png'
 
