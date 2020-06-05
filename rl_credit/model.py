@@ -604,6 +604,7 @@ class QAttentionModel(nn.Module):
 
         self.d_key = d_key
         self.embed_actions = embed_actions
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if embed_actions:
             self._action_embed_size = 32
@@ -658,7 +659,7 @@ class QAttentionModel(nn.Module):
             scores.masked_fill_(custom_mask, float('-inf'))
 
         if mask_future is True:
-            future_mask = torch.ones([seq_len, seq_len]).tril()
+            future_mask = torch.ones([seq_len, seq_len], device=self.device).tril()
             scores.masked_fill_(future_mask == 0, float('-inf'))
 
         scores = torch.softmax(scores, dim=2)  # batch_sz x seq_len x seq_len
