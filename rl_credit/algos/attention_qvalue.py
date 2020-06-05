@@ -108,14 +108,15 @@ class AttentionQAlgo(BaseAlgo):
             tvt_rewards = []
 
             self.tvt_advantages = self.advantages.clone().detach()
+
+            # Modify the advantages of the most important obs by adding the undiscounted
+            # rewards-to-go to their advantage
             for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
                 tvt_reward = tvt_val * self.tvt_alpha * weight
                 self.tvt_advantages[idx[1], idx[0]] += tvt_reward
                 tvt_rewards.append(tvt_reward.item())
 
             if self.use_tvt:
-                # Modify the advantages of the most important obs by adding the undiscounted
-                # rewards-to-go to their advantage
                 exps.advantage = self.tvt_advantages.transpose(0,1).reshape(-1)
                 exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
 
