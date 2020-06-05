@@ -256,6 +256,7 @@ class BaseAlgo(ABC):
         exps.action = self.actions.transpose(0, 1).reshape(-1)
         exps.value = self.values.transpose(0, 1).reshape(-1)
         exps.reward = self.rewards.transpose(0, 1).reshape(-1)
+        exps.rewards_togo = self.rewards_togo.transpose(0, 1).reshape(-1)  # only used by TVT
         exps.advantage = self.advantages.transpose(0, 1).reshape(-1)
         exps.returnn = exps.value + exps.advantage
         # normalize the advantage

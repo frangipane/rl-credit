@@ -599,27 +599,24 @@ class QAttentionModel(nn.Module):
     d_key : int
         rank of attention matrix
     """
-    def __init__(self, embedding_size, action_size, d_key=30):
+    def __init__(self, embedding_size, action_size, d_key=30, embed_actions=False):
         super().__init__()
 
         self.d_key = d_key
+        self.embed_actions = embed_actions
 
-        # self._action_embed_size = 32
-        # self.action_embed = nn.Linear(action_size, self._action_embed_size)
+        if embed_actions:
+            self._action_embed_size = 32
+            self.action_embed = nn.Linear(action_size, self._action_embed_size)
 
-        # self.Wq = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
-        # self.Wk = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
-        # self.Wv = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+            self.Wq = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+            self.Wk = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+            self.Wv = nn.Linear(embedding_size + self._action_embed_size, d_key, bias=False)
+        else:
+            self.Wq = nn.Linear(embedding_size, d_key, bias=False)
+            self.Wk = nn.Linear(embedding_size, d_key, bias=False)
+            self.Wv = nn.Linear(embedding_size, d_key, bias=False)
 
-        self.Wq = nn.Linear(embedding_size, d_key, bias=False)
-        self.Wk = nn.Linear(embedding_size, d_key, bias=False)
-        self.Wv = nn.Linear(embedding_size, d_key, bias=False)
-
-        # self.Qvalue = nn.Sequential(
-        #     nn.Linear(d_key, 64),
-        #     nn.ReLU(),
-        #     nn.Linear(64, 1)
-        # )
         self.Qvalue = nn.Sequential(
             nn.Linear(d_key, 64),
             nn.ReLU(),
@@ -644,9 +641,11 @@ class QAttentionModel(nn.Module):
         """
         batch_sz, seq_len, _ = obs.shape
 
-        #action_embedding = self.action_embed(act.reshape(batch_sz * seq_len, -1))
-
-        x = obs.reshape(batch_sz * seq_len, -1)
+        if self.embed_actions:
+            action_embedding = self.action_embed(act.reshape(batch_sz * seq_len, -1))
+            x = torch.cat((obs.reshape(batch_sz * seq_len, -1), action_embedding), dim=1)
+        else:
+            x = obs.reshape(batch_sz * seq_len, -1)
 
         # batch_sz x seq_len x d_key
         queries = self.Wq(x).view(batch_sz, seq_len, self.d_key) / (self.d_key ** (1/4))

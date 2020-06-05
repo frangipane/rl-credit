@@ -29,7 +29,8 @@ class AttentionQAlgo(BaseAlgo):
                  gae_lambda=0.95, entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5,
                  recurrence=4, rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None,
                  reshape_reward=None, wandb_dir=None, d_key=30, use_tvt=True,
-                 importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1):
+                 importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1, pos_weight=2,
+                 embed_actions=False):
         num_frames_per_proc = num_frames_per_proc or 8
 
         super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
@@ -40,7 +41,8 @@ class AttentionQAlgo(BaseAlgo):
         embed_size = self.acmodel.semi_memory_size
         self.qmodel = QAttentionModel(embedding_size=embed_size,
                                       action_size=7,
-                                      d_key=d_key)
+                                      d_key=d_key,
+                                      embed_actions=embed_actions)
 
         self.optimizer = torch.optim.RMSprop(self.acmodel.parameters(), lr,
                                              alpha=rmsprop_alpha, eps=rmsprop_eps)
@@ -53,6 +55,7 @@ class AttentionQAlgo(BaseAlgo):
         self.importance_threshold = importance_threshold  # Must be b/w 0 and 1.
         self.tvt_alpha = tvt_alpha                        # tvt reward multiplier
         self.y_moving_avg_alpha = y_moving_avg_alpha      # higher discounts older obs faster
+        self.pos_weight = torch.tensor([pos_weight])      # Weight for positive class in binary CE
 
         self.y_max_return = 0.
         self._update_number = 0  # convenience, for debugging, occasional saves
@@ -99,44 +102,45 @@ class AttentionQAlgo(BaseAlgo):
         self.top_imp_idxs = torch.nonzero(importance_mask)
         top_rew2go = self.rewards_togo.transpose(0,1)[importance_mask]
 
-        # logging
-        tvt_rewards = []
+        if len(self.top_imp) > 0:
+            # logging
+            tvt_rewards = []
 
-        self.tvt_advantages = self.advantages.clone().detach()
-        for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
-            tvt_reward = tvt_val * self.tvt_alpha * weight
-            tvt_rewards.append(tvt_reward)
-            self.tvt_advantages[idx[1], idx[0]] += tvt_reward
+            self.tvt_advantages = self.advantages.clone().detach()
+            for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
+                tvt_reward = tvt_val * self.tvt_alpha * weight
+                tvt_rewards.append(tvt_reward)
+                self.tvt_advantages[idx[1], idx[0]] += tvt_reward
 
-        if self.use_tvt:
-            # Modify the advantages of the most important obs by adding the undiscounted
-            # rewards-to-go to their advantage
-            exps.advantage = self.tvt_advantages.transpose(0,1).reshape(-1)
-            exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
+            if self.use_tvt:
+                # Modify the advantages of the most important obs by adding the undiscounted
+                # rewards-to-go to their advantage
+                exps.advantage = self.tvt_advantages.transpose(0,1).reshape(-1)
+                exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
+
+            tvt_rewards = np.array(tvt_rewards)
+            logs.update({'top_scores_max': self.top_imp.max().item(),
+                         'top_scores_mean': self.top_imp.mean().item(),
+                         'top_scores_min': self.top_imp.min().item(),
+                         'top_rew2go_max': top_rew2go.max().item(),
+                         'top_rew2go_mean': top_rew2go.mean().item(),
+                         'top_rew2go_min': top_rew2go.min().item(),
+                         'tvt_reward_max': tvt_rewards.max(),
+                         'tvt_reward_mean': tvt_rewards.mean(),
+                         'tvt_reward_min': tvt_rewards.min(),
+                         'adv_tvt_max': self.tvt_advantages.max().item(),
+                         'adv_tvt_min': self.tvt_advantages.min().item(),
+                         'adv_tvt_mean': self.tvt_advantages.mean().item(),
+                         'adv_tvt_std': self.tvt_advantages.std().item(),
+                         'num_obs_over_tvt_thresh': len(self.top_imp),
+            })
 
         # Log some values
-
-        tvt_rewards = np.array(tvt_rewards)
         logs.update({'return_classifier_thresh': self.y_max_return,
-                     'top_scores_max': self.top_imp.max().item(),
-                     'top_scores_mean': self.top_imp.mean().item(),
-                     'top_scores_min': self.top_imp.min().item(),
-                     'top_rew2go_max': top_rew2go.max().item(),
-                     'top_rew2go_mean': top_rew2go.mean().item(),
-                     'top_rew2go_min': top_rew2go.min().item(),
-                     'tvt_reward_max': tvt_rewards.max(),
-                     'tvt_reward_mean': tvt_rewards.mean(),
-                     'tvt_reward_min': tvt_rewards.min(),
-
-                     # unnormalized advantages before and after TVT
                      "adv_max": self.advantages.max().item(),
                      "adv_min": self.advantages.min().item(),
                      "adv_mean": self.advantages.mean().item(),
                      "adv_std": self.advantages.std().item(),
-                     "adv_tvt_max": self.tvt_advantages.max().item(),
-                     "adv_tvt_min": self.tvt_advantages.min().item(),
-                     "adv_tvt_mean": self.tvt_advantages.mean().item(),
-                     "adv_tvt_std": self.tvt_advantages.std().item(),
         })
 
         return exps, logs
@@ -295,8 +299,8 @@ class AttentionQAlgo(BaseAlgo):
                                      mask_future=True,
                                      custom_mask=self.attn_mask)
 
-        y_target = (exps.returnn > self.y_max_return).float().unsqueeze(1)
-        pos_weight = torch.tensor([2])
+        y_target = (exps.rewards_togo > self.y_max_return).float().unsqueeze(1)
+        pos_weight = torch.tensor([self.pos_weight])
         qvalue_loss = F.binary_cross_entropy_with_logits(qvalue, y_target, pos_weight=pos_weight)
 
         # Update actor-critic
@@ -318,7 +322,7 @@ class AttentionQAlgo(BaseAlgo):
         # Log some values
 
         # Save attention scores heatmap every 200 updates
-        if self.wandb_dir is not None and self._update_number % 200 == 0:
+        if self.wandb_dir is not None and self._update_number % 100 == 0:
             self.save_attention_plots(scores)
             self.save_top_attended_obs(k=10)
 
@@ -399,9 +403,11 @@ class AttentionQAlgo(BaseAlgo):
                        5: 'toggle',
                        6: 'done'}
 
+        sorted_top_imp, sorted_idxs = torch.sort(self.top_imp, descending=True)
+
         for i in range(min(k, len(self.top_imp))):
-            proc, frame = self.top_imp_idxs[i]
-            score = str(self.top_imp[i].numpy().round(2))
+            proc, frame = self.top_imp_idxs[sorted_idxs[i]]
+            score = str(sorted_top_imp[i].numpy().round(2))
             act = map_actions[self.actions[frame, proc].item()]
             fname = f'obs_{self._update_number:04}_proc{proc}_fr{frame:03}_score{score}__{act}.png'
 
