@@ -99,44 +99,45 @@ class AttentionQAlgo(BaseAlgo):
         self.top_imp_idxs = torch.nonzero(importance_mask)
         top_rew2go = self.rewards_togo.transpose(0,1)[importance_mask]
 
-        # logging
-        tvt_rewards = []
+        if len(self.top_imp) > 0:
+            # logging
+            tvt_rewards = []
 
-        self.tvt_advantages = self.advantages.clone().detach()
-        for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
-            tvt_reward = tvt_val * self.tvt_alpha * weight
-            tvt_rewards.append(tvt_reward)
-            self.tvt_advantages[idx[1], idx[0]] += tvt_reward
+            self.tvt_advantages = self.advantages.clone().detach()
+            for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
+                tvt_reward = tvt_val * self.tvt_alpha * weight
+                tvt_rewards.append(tvt_reward)
+                self.tvt_advantages[idx[1], idx[0]] += tvt_reward
 
-        if self.use_tvt:
-            # Modify the advantages of the most important obs by adding the undiscounted
-            # rewards-to-go to their advantage
-            exps.advantage = self.tvt_advantages.transpose(0,1).reshape(-1)
-            exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
+            if self.use_tvt:
+                # Modify the advantages of the most important obs by adding the undiscounted
+                # rewards-to-go to their advantage
+                exps.advantage = self.tvt_advantages.transpose(0,1).reshape(-1)
+                exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
+
+            tvt_rewards = np.array(tvt_rewards)
+            logs.update({'top_scores_max': self.top_imp.max().item(),
+                         'top_scores_mean': self.top_imp.mean().item(),
+                         'top_scores_min': self.top_imp.min().item(),
+                         'top_rew2go_max': top_rew2go.max().item(),
+                         'top_rew2go_mean': top_rew2go.mean().item(),
+                         'top_rew2go_min': top_rew2go.min().item(),
+                         'tvt_reward_max': tvt_rewards.max(),
+                         'tvt_reward_mean': tvt_rewards.mean(),
+                         'tvt_reward_min': tvt_rewards.min(),
+                         'adv_tvt_max': self.tvt_advantages.max().item(),
+                         'adv_tvt_min': self.tvt_advantages.min().item(),
+                         'adv_tvt_mean': self.tvt_advantages.mean().item(),
+                         'adv_tvt_std': self.tvt_advantages.std().item(),
+                         'num_obs_over_tvt_thresh': len(self.top_imp),
+            })
 
         # Log some values
-
-        tvt_rewards = np.array(tvt_rewards)
         logs.update({'return_classifier_thresh': self.y_max_return,
-                     'top_scores_max': self.top_imp.max().item(),
-                     'top_scores_mean': self.top_imp.mean().item(),
-                     'top_scores_min': self.top_imp.min().item(),
-                     'top_rew2go_max': top_rew2go.max().item(),
-                     'top_rew2go_mean': top_rew2go.mean().item(),
-                     'top_rew2go_min': top_rew2go.min().item(),
-                     'tvt_reward_max': tvt_rewards.max(),
-                     'tvt_reward_mean': tvt_rewards.mean(),
-                     'tvt_reward_min': tvt_rewards.min(),
-
-                     # unnormalized advantages before and after TVT
                      "adv_max": self.advantages.max().item(),
                      "adv_min": self.advantages.min().item(),
                      "adv_mean": self.advantages.mean().item(),
                      "adv_std": self.advantages.std().item(),
-                     "adv_tvt_max": self.tvt_advantages.max().item(),
-                     "adv_tvt_min": self.tvt_advantages.min().item(),
-                     "adv_tvt_mean": self.tvt_advantages.mean().item(),
-                     "adv_tvt_std": self.tvt_advantages.std().item(),
         })
 
         return exps, logs
