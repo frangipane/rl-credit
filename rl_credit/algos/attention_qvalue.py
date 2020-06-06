@@ -99,7 +99,9 @@ class AttentionQAlgo(BaseAlgo):
         importance_mask = self.importances > self.importance_threshold  # (num_procs, frames_per_proc)
         self.top_imp = self.importances[importance_mask]
         self.top_imp_idxs = torch.nonzero(importance_mask)
-        top_rew2go = self.rewards_togo.transpose(0,1)[importance_mask]
+
+        top_rew2go = self.get_top_rew2go(self.top_imp_idxs)
+        #top_rew2go = self.rewards_togo.transpose(0,1)[importance_mask]
 
         if len(self.top_imp) > 0:
             # logging
@@ -110,8 +112,9 @@ class AttentionQAlgo(BaseAlgo):
             # Modify the advantages of the most important obs by adding the undiscounted
             # rewards-to-go to their advantage
             for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
+                proc, frame = idx
                 tvt_reward = tvt_val * self.tvt_alpha * weight
-                self.tvt_advantages[idx[1], idx[0]] += tvt_reward
+                self.tvt_advantages[frame, proc] += tvt_reward
                 tvt_rewards.append(tvt_reward.item())
 
             if self.use_tvt:
@@ -231,6 +234,32 @@ class AttentionQAlgo(BaseAlgo):
                                          custom_mask=attn_mask)
 
         return qvalue, scores, attn_mask, attn_obss, attn_actions
+
+    def get_top_rew2go(self, top_idxs):
+        """
+        Return rewards-to-go, excluding near term rewards (with timescale set
+        by the discount factor).
+
+        idxs: tensor, shape (N, 2), where N is the number
+            of obs over the importance threshold
+        """
+        try:
+            discount_t = int(np.round(1/(1 - self.discount)))  # discount factor timescale
+        except ZeroDivisionError:
+            raise ValueError("Discount factor must be less than 1.0 to use tvt")
+
+        top_rew2go = torch.zeros(top_idxs.shape[0], device=self.device)
+
+        for i, idx in enumerate(top_idxs):
+            proc, frame = idx
+            future_frame =  min(frame + discount_t, self.num_frames_per_proc - 1)
+
+            seq_for_obs = self.seq_labels[frame, proc]
+            seq_discount_t_steps_in_future = self.seq_labels[future_frame, proc]
+            future_is_same_episode = (seq_for_obs == seq_discount_t_steps_in_future)
+
+            top_rew2go[i] = self.rewards_togo[future_frame, proc] * future_is_same_episode
+        return top_rew2go
 
     def update_parameters(self, exps):
         self._update_number += 1
