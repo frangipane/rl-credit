@@ -223,15 +223,13 @@ class BaseAlgo(ABC):
             else:
                 _, next_value = self.acmodel(preprocessed_obs)
 
+        self.value = next_value
+        self.calculate_advantages()
+
+        # Calculate the rewards-to-go / undiscounted return (not used by all algos)
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask = self.masks[i+1] if i < self.num_frames_per_proc - 1 else self.mask
             next_value = self.values[i+1] if i < self.num_frames_per_proc - 1 else next_value
-            next_advantage = self.advantages[i+1] if i < self.num_frames_per_proc - 1 else 0
-
-            delta = self.rewards[i] + self.discount * next_value * next_mask - self.values[i]
-            self.advantages[i] = delta + self.discount * self.gae_lambda * next_advantage * next_mask
-
-            # undiscounted return / rewards to go (not used by all algos)
             next_reward_togo = self.rewards_togo[i+1] if i < self.num_frames_per_proc - 1 else next_value
             self.rewards_togo[i] = self.rewards[i] + next_reward_togo * next_mask
 
@@ -293,3 +291,14 @@ class BaseAlgo(ABC):
     @abstractmethod
     def update_parameters(self):
         pass
+
+    def calculate_advantages(self):
+        next_value = self.value
+
+        for i in reversed(range(self.num_frames_per_proc)):
+            next_mask = self.masks[i+1] if i < self.num_frames_per_proc - 1 else self.mask
+            next_value = self.values[i+1] if i < self.num_frames_per_proc - 1 else next_value
+            next_advantage = self.advantages[i+1] if i < self.num_frames_per_proc - 1 else 0
+
+            delta = self.rewards[i] + self.discount * next_value * next_mask - self.values[i]
+            self.advantages[i] = delta + self.discount * self.gae_lambda * next_advantage * next_mask
