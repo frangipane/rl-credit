@@ -85,8 +85,7 @@ class AttentionQAlgo(BaseAlgo):
 
         # Update max returns (moving average) seen in training run
         max_return = max(logs['return_per_episode'])  # undiscounted returns
-        if max_return > self.y_max_return:
-            self.y_max_return += self.y_moving_avg_alpha * (max_return - self.y_max_return)
+        self.y_max_return += self.y_moving_avg_alpha * (max_return - self.y_max_return)
 
         # ===== Use most highly attended observations for TVT =====
 
