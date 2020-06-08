@@ -100,21 +100,22 @@ class AttentionQAlgo(BaseAlgo):
         self.top_imp_idxs = torch.nonzero(importance_mask)
 
         top_rew2go = self.get_top_rew2go(self.top_imp_idxs)
-        #top_rew2go = self.rewards_togo.transpose(0,1)[importance_mask]
 
         # TVT: add undiscounted rewards-to-go, excluding rewards accumulated during discount time
-        # scale, to the most important obs and recalculate advantages with these new values.
+        # scale, to the rewards of the most important obs. Recalculate advantages with these
+        # new rewards.
         if len(self.top_imp) > 0 and self.use_tvt:
             # logging
             tvt_rewards = []
+            modified_rewards = self.rewards.detach().clone()
 
             for idx, weight, tvt_val in zip(self.top_imp_idxs, self.top_imp, top_rew2go):
                 proc, frame = idx
                 tvt_reward = tvt_val * self.tvt_alpha * weight
-                self.values[frame, proc] += tvt_reward
+                modified_rewards[frame, proc] += tvt_reward
                 tvt_rewards.append(tvt_reward.item())
 
-            self.calculate_advantages()
+            self.calculate_advantages(rewards=modified_rewards)
             exps.advantage = self.advantages.transpose(0,1).reshape(-1)
             exps.advantage = (exps.advantage - exps.advantage.mean())/exps.advantage.std()
 
