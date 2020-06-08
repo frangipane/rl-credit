@@ -25,7 +25,6 @@ class KeyGiftsGoalBaseEnv(ThreePhaseDelayedReward):
             delayed_reward_env=GoalKeyOptionalEnv,
             delayed_reward_kwargs=dict(
                 size=7,
-                key_color=None,
                 max_steps=100,
                 goal_reward=5.,
                 key_reward=15.,

@@ -30,6 +30,12 @@ class Delay1_Gifts(VaryGiftsGoalEnv):
         super().__init__(distractor_xtra_kwargs)
 
 
+class Delay2_Gifts(VaryGiftsGoalEnv):
+    def __init__(self):
+        distractor_xtra_kwargs = {'max_steps': 2.0 * DISCOUNT_TIMESCALE}
+        super().__init__(distractor_xtra_kwargs)
+
+
 ####################################################
 # Config params shared among all experiments
 
@@ -86,16 +92,29 @@ common_algo_kwargs = dict(
 
 
 ##************ experiment 3 ************
-model_dir_stem='a2c_mem10_giftdelay1'
+# model_dir_stem='a2c_mem10_giftdelay1'
+# expt_train_config = dict(
+#     env_id='GiftDistractorDelay1-v0',
+#     algo_name='a2c',
+#     recurrence=10,
+# )
+# expt_algo_kwargs = {}
+# delay_factor = 'delay_factor=1'
+# delay_steps = 'delay_steps=100'
+# wandb_notes = 'A2C with recurrence=10, gift env delay=100 steps (100% of discount factor timescale)'
+
+
+##************ experiment 4 ************
+model_dir_stem='a2c_mem10_giftdelay2'
 expt_train_config = dict(
-    env_id='GiftDistractorDelay1-v0',
+    env_id='GiftDistractorDelay2-v0',
     algo_name='a2c',
     recurrence=10,
 )
 expt_algo_kwargs = {}
-delay_factor = 'delay_factor=1'
-delay_steps = 'delay_steps=100'
-wandb_notes = 'A2C with recurrence=10, gift env delay=100 steps (100% of discount factor timescale)'
+delay_factor = 'delay_factor=2'
+delay_steps = 'delay_steps=200'
+wandb_notes = 'A2C with recurrence=10, gift env delay=200 steps (200% of discount factor timescale)'
 
 
 def main(seed):
