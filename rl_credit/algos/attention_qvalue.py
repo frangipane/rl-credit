@@ -167,10 +167,14 @@ class AttentionQAlgo(BaseAlgo):
         summed_scores = torch.sum(scores, dim=1).squeeze(1)
 
         # Count number of non-zero entries along columns -> P x T.
-        # Since mask doesn't include mask from upper triangle, combine
-        # them into total mask here.
-        future_mask = torch.ones([seq_len, seq_len], device=self.device).tril()
-        total_unmasked = ~(masks | (future_mask.expand_as(masks) == 0))
+
+        if self.mask_future:
+            # Since mask doesn't include mask from upper triangle, combine
+            # them into total mask here.
+            future_mask = torch.ones([seq_len, seq_len], device=self.device).tril()
+            total_unmasked = ~(masks | (future_mask.expand_as(masks) == 0))
+        else:
+            total_unmasked = ~masks
         summed_unmasked = torch.sum(total_unmasked, dim=1)
 
         importances = torch.div(summed_scores, summed_unmasked)
