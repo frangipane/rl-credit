@@ -17,6 +17,11 @@ register(
 )
 
 register(
+    id='GiftDistractorDelay2-v0',
+    entry_point='rl_credit.examples.distractor_delay_expt:Delay2_Gifts'
+)
+
+register(
     id='GiftDistractorReward0-v0',
     entry_point='rl_credit.examples.distractor_mean_expt:Reward0_Gifts'
 )
