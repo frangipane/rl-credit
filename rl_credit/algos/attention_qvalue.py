@@ -28,7 +28,7 @@ class AttentionQAlgo(BaseAlgo):
                  recurrence=4, rmsprop_alpha=0.99, rmsprop_eps=1e-8, preprocess_obss=None,
                  reshape_reward=None, plots_dir=None, d_key=30, use_tvt=True,
                  importance_threshold=0.05, tvt_alpha=0.9, y_moving_avg_alpha=0.1, pos_weight=2,
-                 embed_actions=False):
+                 embed_actions=False, mask_future=False):
         num_frames_per_proc = num_frames_per_proc or 8
 
         super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
@@ -55,6 +55,7 @@ class AttentionQAlgo(BaseAlgo):
         self.tvt_alpha = tvt_alpha                        # tvt reward multiplier
         self.y_moving_avg_alpha = y_moving_avg_alpha      # higher discounts older obs faster
         self.pos_weight = torch.tensor([pos_weight])      # Weight for positive class in binary CE
+        self.mask_future = mask_future                    # Only look backwards for classification?
 
         self.y_max_return = 0.
         self._update_number = 0  # convenience, for debugging, occasional saves
@@ -223,7 +224,7 @@ class AttentionQAlgo(BaseAlgo):
         with torch.no_grad():
             qvalue, scores = self.qmodel(obs=attn_obss,
                                          act=attn_actions,
-                                         mask_future=True,
+                                         mask_future=self.mask_future,
                                          custom_mask=attn_mask)
 
         return qvalue, scores, attn_mask, attn_obss, attn_actions
@@ -317,7 +318,7 @@ class AttentionQAlgo(BaseAlgo):
 
         qvalue, scores = self.qmodel(obs=self.attn_obss,
                                      act=self.attn_actions,
-                                     mask_future=True,
+                                     mask_future=self.mask_future,
                                      custom_mask=self.attn_mask)
 
         y_target = (exps.rewards_togo > self.y_max_return).float().unsqueeze(1).to(self.device)
