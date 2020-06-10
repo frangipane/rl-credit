@@ -42,7 +42,7 @@ class Delay2_Gifts(VaryGiftsGoalEnv):
 common_train_config = dict(
     num_procs=16,
     save_interval=300,
-    total_frames=16*600*1000,  #9_600_000
+    total_frames=16*600*2000,  #19_200_000
     log_interval=1,
 )
 
