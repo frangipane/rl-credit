@@ -7,6 +7,7 @@ from gym_minigrid.envs.goalkeyoptional import GoalKeyOptionalEnv
 DISCOUNT_FACTOR = 0.99
 DISCOUNT_TIMESCALE = 100
 STEPS_IN_PHASE1 = 30
+STEPS_IN_PHASE3 = 70
 
 
 class KeyGiftsGoalBaseEnv(ThreePhaseDelayedReward):
@@ -25,9 +26,10 @@ class KeyGiftsGoalBaseEnv(ThreePhaseDelayedReward):
             delayed_reward_env=GoalKeyOptionalEnv,
             delayed_reward_kwargs=dict(
                 size=7,
-                max_steps=100,
+                max_steps=STEPS_IN_PHASE3,
                 goal_reward=5.,
                 key_reward=15.,
+                done_when_goal_reached=False,
             ),
             key_teleports_to_end_only=True
         )
