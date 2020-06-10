@@ -28,7 +28,8 @@ class KeyGiftsGoalBaseEnv(ThreePhaseDelayedReward):
                 max_steps=100,
                 goal_reward=5.,
                 key_reward=15.,
-            )
+            ),
+            key_teleports_to_end_only=True
         )
 
 
