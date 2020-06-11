@@ -114,7 +114,7 @@ expt_train_config = dict(
 expt_algo_kwargs = {}
 delay_factor = 'delay_factor=2'
 delay_steps = 'delay_steps=200'
-wandb_notes = 'A2C with recurrence=10, gift env delay=200 steps (200% of discount factor timescale)'
+wandb_notes = 'A2C with recurrence=10, gift env delay=200 steps (200% of discount factor timescale), fixed phase3'
 
 
 def main(seed):
@@ -143,7 +143,8 @@ def main(seed):
               delay_factor,
               delay_steps,
               train_config['env_id'],
-              f'discount_timescale={DISCOUNT_TIMESCALE}'],
+              f'discount_timescale={DISCOUNT_TIMESCALE}',
+              'phase3=fixed 70steps'],
         notes=wandb_notes,
         reinit=True,
         group=wandb_name,
