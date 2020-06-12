@@ -623,6 +623,7 @@ class QAttentionModel(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 1)
         )
+        self.apply(init_params)
 
     def forward(self, obs, act, mask_future=True, custom_mask=None):
         """
