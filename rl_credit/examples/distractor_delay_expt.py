@@ -121,7 +121,7 @@ common_algo_kwargs = dict(
 model_dir_stem='tvt_mem10_giftdelay2'
 expt_train_config = dict(
     env_id='GiftDistractorDelay2-v0',
-    algo_name='attentionq',
+    algo_name='tvt',
     recurrence=10,
 )
 expt_algo_kwargs = dict(
