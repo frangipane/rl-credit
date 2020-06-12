@@ -161,7 +161,7 @@ elif args.algo == "hca_state":
     acmodel = ACModelStateHCA(obs_space, envs[0].action_space)
 elif args.algo == "attention":
     acmodel = ACAttention(obs_space, envs[0].action_space, d_key=args.d_key)
-elif args.algo == "attentionq":
+elif args.algo == "tvt":
     acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
 else:
     acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
@@ -193,7 +193,7 @@ elif args.algo == "attention":
     algo = rl_credit.AttentionAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                    args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                                    args.optim_alpha, args.optim_eps, preprocess_obss, wandb_dir=wandb_dir)
-elif args.algo == "attentionq":
+elif args.algo == "tvt":
     algo = rl_credit.AttentionQAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                     args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                                     args.optim_alpha, args.optim_eps, preprocess_obss, plots_dir=wandb_dir,

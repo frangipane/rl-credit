@@ -94,7 +94,7 @@ def train(env_id,
 
     # Load model
     use_mem = recurrence > 1
-    if algo_name in ('a2c', 'attentionq'):
+    if algo_name in ('a2c', 'tvt'):
         acmodel = ACModel(obs_space, envs[0].action_space, use_mem, False)
     else:
         raise ValueError("Unrecognized algo")
@@ -114,7 +114,7 @@ def train(env_id,
                         'preprocess_obss': preprocess_obss})
     if algo_name == 'a2c':
         algo = rl_credit.A2CAlgo(**algo_kwargs)
-    elif algo_name == 'attentionq':
+    elif algo_name == 'tvt':
         algo = rl_credit.AttentionQAlgo(**algo_kwargs, plots_dir=plots_dir)
 
     if "optimizer_state" in status:
