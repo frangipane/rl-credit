@@ -104,17 +104,39 @@ common_algo_kwargs = dict(
 # wandb_notes = 'A2C with recurrence=10, gift env delay=100 steps (100% of discount factor timescale)'
 
 
-##************ experiment 4 ************
-model_dir_stem='a2c_mem10_giftdelay2'
+##************ experiment 4a ************
+# model_dir_stem='a2c_mem10_giftdelay2'
+# expt_train_config = dict(
+#     env_id='GiftDistractorDelay2-v0',
+#     algo_name='a2c',
+#     recurrence=10,
+# )
+# expt_algo_kwargs = {}
+# delay_factor = 'delay_factor=2'
+# delay_steps = 'delay_steps=200'
+# wandb_notes = 'A2C with recurrence=10, gift env delay=200 steps (200% of discount factor timescale), fixed phase3'
+
+
+##************ experiment 4b ************
+model_dir_stem='tvt_mem10_giftdelay2'
 expt_train_config = dict(
     env_id='GiftDistractorDelay2-v0',
-    algo_name='a2c',
+    algo_name='attentionq',
     recurrence=10,
 )
-expt_algo_kwargs = {}
+expt_algo_kwargs = dict(
+    d_key=300,  # same as fixed episode len
+    use_tvt=True,
+    importance_threshold=0.15,
+    tvt_alpha=0.5,
+    y_moving_avg_alpha=0.03,
+    pos_weight=2,
+    embed_actions=True,
+    mask_future=True,
+)
 delay_factor = 'delay_factor=2'
 delay_steps = 'delay_steps=200'
-wandb_notes = 'A2C with recurrence=10, gift env delay=200 steps (200% of discount factor timescale), fixed phase3'
+wandb_notes = 'TVT, recurrence=10, d_key=300, action embed, fixed phase 3'
 
 
 def main(seed):
