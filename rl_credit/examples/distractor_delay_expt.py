@@ -64,82 +64,161 @@ common_algo_kwargs = dict(
 # Experiment-specific configs
 
 ##************ experiment 1 ************
-# model_dir_stem='a2c_mem10_giftdelay0'
-# expt_train_config = dict(
-#     env_id='GiftDistractorDelay0-v0',
-#     algo_name='a2c',
-#     recurrence=10,
-# )
-# expt_algo_kwargs = {}
+expt1a = dict(
+    model_dir_stem='a2c_mem10_giftdelay0',
+    expt_train_config = dict(
+        env_id='GiftDistractorDelay0-v0',
+        algo_name='a2c',
+        recurrence=10,
+    ),
+    expt_algo_kwargs = {},
 
-# # wandb metadata (tags, notes)
-# delay_factor = 'delay_factor=0'
-# delay_steps = 'delay_steps=0'
-# wandb_notes = 'A2C with recurrence=10, gift env delay=0'
+    # wandb metadata (tags, notes)
+    delay_factor = 'delay_factor=0',
+    delay_steps = 'delay_steps=0',
+    wandb_notes = 'A2C with recurrence=10, gift env delay=0, fixed phase3'
+)
+
+
+expt1b = dict(
+    model_dir_stem='tvt_mem10_giftdelay0',
+    expt_train_config = dict(
+        env_id='GiftDistractorDelay0-v0',
+        algo_name='tvt',
+        recurrence=10,
+    ),
+    expt_algo_kwargs = dict(
+        d_key=100,  # same as fixed episode len
+        use_tvt=True,
+        importance_threshold=0.15,
+        tvt_alpha=0.5,
+        y_moving_avg_alpha=0.03,
+        pos_weight=2,
+        embed_actions=True,
+        mask_future=True,
+    ),
+    delay_factor = 'delay_factor=0',
+    delay_steps = 'delay_steps=0',
+    wandb_notes = 'TVT, recurrence=10, d_key=100, action embed, fixed phase 3'
+)
 
 
 ##************ experiment 2 ************
-# model_dir_stem='a2c_mem10_giftdelay0_5-giftrew3'
-# expt_train_config = dict(
-#     env_id='GiftDistractorDelay0_5-v0',
-#     algo_name='a2c',
-#     recurrence=10,
-# )
-# expt_algo_kwargs = {}
-# delay_factor = 'delay_factor=0.5'
-# delay_steps = 'delay_steps=50'
-# wandb_notes = 'A2C with recurrence=10, gift env delay=50 steps (50% of discount factor timescale)'
+expt2a = dict(
+    model_dir_stem='a2c_mem10_giftdelay0_5',
+    expt_train_config = dict(
+        env_id='GiftDistractorDelay0_5-v0',
+        algo_name='a2c',
+        recurrence=10,
+    ),
+    expt_algo_kwargs = {},
+    delay_factor = 'delay_factor=0.5',
+    delay_steps = 'delay_steps=50',
+    wandb_notes = 'A2C with recurrence=10, gift env delay=50 steps (50% of discount factor timescale), fixed phase3'
+)
+
+
+expt2b = dict(
+    model_dir_stem='tvt_mem10_giftdelay0_5',
+    expt_train_config = dict(
+        env_id='GiftDistractorDelay0_5-v0',
+        algo_name='tvt',
+        recurrence=10,
+    ),
+    expt_algo_kwargs = dict(
+        d_key=150,  # same as fixed episode len
+        use_tvt=True,
+        importance_threshold=0.15,
+        tvt_alpha=0.5,
+        y_moving_avg_alpha=0.03,
+        pos_weight=2,
+        embed_actions=True,
+        mask_future=True,
+    ),
+    delay_factor = 'delay_factor=0.5',
+    delay_steps = 'delay_steps=50',
+    wandb_notes = 'TVT, recurrence=10, d_key=150, action embed, fixed phase 3'
+)
 
 
 ##************ experiment 3 ************
-# model_dir_stem='a2c_mem10_giftdelay1'
-# expt_train_config = dict(
-#     env_id='GiftDistractorDelay1-v0',
-#     algo_name='a2c',
-#     recurrence=10,
-# )
-# expt_algo_kwargs = {}
-# delay_factor = 'delay_factor=1'
-# delay_steps = 'delay_steps=100'
-# wandb_notes = 'A2C with recurrence=10, gift env delay=100 steps (100% of discount factor timescale)'
-
-
-##************ experiment 4a ************
-# model_dir_stem='a2c_mem10_giftdelay2'
-# expt_train_config = dict(
-#     env_id='GiftDistractorDelay2-v0',
-#     algo_name='a2c',
-#     recurrence=10,
-# )
-# expt_algo_kwargs = {}
-# delay_factor = 'delay_factor=2'
-# delay_steps = 'delay_steps=200'
-# wandb_notes = 'A2C with recurrence=10, gift env delay=200 steps (200% of discount factor timescale), fixed phase3'
-
-
-##************ experiment 4b ************
-model_dir_stem='tvt_mem10_giftdelay2'
-expt_train_config = dict(
-    env_id='GiftDistractorDelay2-v0',
-    algo_name='tvt',
-    recurrence=10,
+expt3a = dict(
+    model_dir_stem='a2c_mem10_giftdelay1',
+    expt_train_config = dict(
+        env_id='GiftDistractorDelay1-v0',
+        algo_name='a2c',
+        recurrence=10,
+    ),
+    expt_algo_kwargs = {},
+    delay_factor = 'delay_factor=1',
+    delay_steps = 'delay_steps=100',
+    wandb_notes = 'A2C with recurrence=10, gift env delay=100 steps (100% of discount factor timescale), fixed phase3'
 )
-expt_algo_kwargs = dict(
-    d_key=300,  # same as fixed episode len
-    use_tvt=True,
-    importance_threshold=0.15,
-    tvt_alpha=0.5,
-    y_moving_avg_alpha=0.03,
-    pos_weight=2,
-    embed_actions=True,
-    mask_future=True,
+
+
+expt3b = dict(
+    model_dir_stem='tvt_mem10_giftdelay1',
+    expt_train_config = dict(
+        env_id='GiftDistractorDelay1-v0',
+        algo_name='tvt',
+        recurrence=10,
+    ),
+    expt_algo_kwargs = dict(
+        d_key=200,  # same as fixed episode len
+        use_tvt=True,
+        importance_threshold=0.15,
+        tvt_alpha=0.5,
+        y_moving_avg_alpha=0.03,
+        pos_weight=2,
+        embed_actions=True,
+        mask_future=True,
+    ),
+    delay_factor = 'delay_factor=1',
+    delay_steps = 'delay_steps=100',
+    wandb_notes = 'TVT, recurrence=10, d_key=200, action embed, fixed phase 3'
 )
-delay_factor = 'delay_factor=2'
-delay_steps = 'delay_steps=200'
-wandb_notes = 'TVT, recurrence=10, d_key=300, action embed, fixed phase 3'
 
 
-def main(seed):
+##************ experiment 4 ************
+expt4a = dict(
+    model_dir_stem='a2c_mem10_giftdelay2',
+    expt_train_config = dict(
+        env_id='GiftDistractorDelay2-v0',
+        algo_name='a2c',
+        recurrence=10,
+    ),
+    expt_algo_kwargs = {},
+    delay_factor = 'delay_factor=2',
+    delay_steps = 'delay_steps=200',
+    wandb_notes = 'A2C with recurrence=10, gift env delay=200 steps (200% of discount factor timescale), fixed phase3'
+)
+
+
+expt4b = dict(
+    model_dir_stem='tvt_mem10_giftdelay2',
+    expt_train_config = dict(
+        env_id='GiftDistractorDelay2-v0',
+        algo_name='tvt',
+        recurrence=10,
+    ),
+    expt_algo_kwargs = dict(
+        d_key=300,  # same as fixed episode len
+        use_tvt=True,
+        importance_threshold=0.15,
+        tvt_alpha=0.5,
+        y_moving_avg_alpha=0.03,
+        pos_weight=2,
+        embed_actions=True,
+        mask_future=True,
+    ),
+    delay_factor = 'delay_factor=2',
+    delay_steps = 'delay_steps=200',
+    wandb_notes = 'TVT, recurrence=10, d_key=300, action embed, fixed phase 3'
+)
+
+
+def main(model_dir_stem, expt_train_config, expt_algo_kwargs, delay_factor,
+         delay_steps, wandb_notes, seed):
     wandb_params = {}
     algo_kwargs = common_algo_kwargs
     algo_kwargs.update(expt_algo_kwargs)
@@ -181,8 +260,6 @@ def main(seed):
 
 
 if __name__ == '__main__':
-    # Number of runs to average over per experiment
-    seeds = range(5)
-
-    for seed in seeds:
-        main(seed)
+    expts = [expt4b]*5
+    for i, expt in enumerate(expts):
+        main(**expt, seed=i)
